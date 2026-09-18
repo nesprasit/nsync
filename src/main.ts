@@ -4,7 +4,7 @@ import { IndexStore } from "./sync/indexStore";
 import { SyncEngine } from "./sync/engine";
 import { DriveClient } from "./drive/driveClient";
 import { refresh, type TokenSet } from "./auth/oauth";
-import { AuthManager, MOBILE_CALLBACK_ACTION } from "./auth/authManager";
+import { AuthManager, MOBILE_CALLBACK_ACTION, type PendingAuth } from "./auth/authManager";
 import { isValidNamespace } from "./sync/namespace";
 import { summarizeRemote } from "./sync/remoteSummary";
 import { RemoteFilesModal } from "./ui/remoteFilesModal";
@@ -22,9 +22,11 @@ function openExternal(url: string): void {
 }
 
 // data.json layout (all per-device, excluded from sync):
-//   { settings, index, deviceId, auth }
+//   { settings, index, deviceId, namespace, nsMigrated, auth, pendingAuth }
 interface PersistedAuth {
   token?: TokenSet;
+  /** Signed-in Google account, shown in settings. */
+  email?: string;
 }
 
 export default class NSyncPlugin extends Plugin {
@@ -33,6 +35,7 @@ export default class NSyncPlugin extends Plugin {
   private engine!: SyncEngine;
   private drive!: DriveClient;
   private authManager!: AuthManager;
+  private settingTab!: NSyncSettingTab;
   private auth: PersistedAuth = {};
   private timer: number | null = null;
 
@@ -46,6 +49,10 @@ export default class NSyncPlugin extends Plugin {
       // Desktop can open the browser programmatically; mobile needs a direct tap.
       (url) => (Platform.isDesktopApp ? openExternal(url) : new SignInLinkModal(this.app, url).open()),
       () => this.settings.mobileRedirectBridge,
+      {
+        load: async () => ((await this.loadData())?.pendingAuth as PendingAuth | undefined) ?? null,
+        save: async (p) => this.saveData({ ...(await this.loadData()), pendingAuth: p }),
+      },
     );
 
     // Ribbon button + command = the manual "Sync" trigger (CONTEXT Q6).
@@ -62,12 +69,23 @@ export default class NSyncPlugin extends Plugin {
     });
 
     // Mobile OAuth callback: obsidian://nsync-auth?code=...&state=...
-    this.registerObsidianProtocolHandler(MOBILE_CALLBACK_ACTION, (params) => {
-      void this.authManager.handleMobileCallback(params);
+    // The pending sign-in is read from data.json, so this works even if iOS
+    // reloaded Obsidian while the user was in Safari.
+    this.registerObsidianProtocolHandler(MOBILE_CALLBACK_ACTION, async (params) => {
+      try {
+        await this.completeSignIn(await this.authManager.completeMobile(params));
+      } catch (e) {
+        console.error("NSync sign-in failed", e);
+        new Notice(`NSync sign-in failed: ${(e as Error).message}`);
+      }
     });
 
-    this.addSettingTab(new NSyncSettingTab(this.app, this));
+    this.settingTab = new NSyncSettingTab(this.app, this);
+    this.addSettingTab(this.settingTab);
     this.rescheduleAutoSync();
+
+    // Signed in before emails were recorded: look it up once in the background.
+    if (this.isAuthed() && !this.auth.email) void this.refreshAccountEmail();
   }
 
   onunload(): void {
@@ -135,23 +153,54 @@ export default class NSyncPlugin extends Plugin {
     return !!this.auth.token?.refreshToken;
   }
 
+  /** Email of the signed-in Google account, if known. */
+  get accountEmail(): string | undefined {
+    return this.auth.email;
+  }
+
   async toggleAuth(): Promise<void> {
     if (this.isAuthed()) {
       this.auth = {};
       await this.persistAuth();
       new Notice("NSync: signed out.");
+      this.refreshSettingTab();
       return;
     }
     try {
       new Notice("NSync: opening Google sign-in…");
       const token = await this.authManager.signIn();
-      this.auth = { token };
-      await this.persistAuth();
-      new Notice("NSync: signed in.");
+      // Desktop returns the token here; mobile finishes in the protocol handler.
+      if (token) await this.completeSignIn(token);
     } catch (e) {
       console.error("NSync sign-in failed", e);
       new Notice(`NSync sign-in failed: ${(e as Error).message}`);
     }
+  }
+
+  private async completeSignIn(token: TokenSet): Promise<void> {
+    this.auth = { token };
+    await this.persistAuth();
+    await this.refreshAccountEmail();
+    new Notice(this.auth.email ? `NSync: signed in as ${this.auth.email}` : "NSync: signed in.");
+    this.refreshSettingTab();
+  }
+
+  private async refreshAccountEmail(): Promise<void> {
+    try {
+      const { email } = await this.drive.about();
+      if (email) {
+        this.auth.email = email;
+        await this.persistAuth();
+        this.refreshSettingTab();
+      }
+    } catch (e) {
+      console.warn("NSync: couldn't look up account email", e);
+    }
+  }
+
+  /** Re-render settings so the account status reflects the latest state. */
+  private refreshSettingTab(): void {
+    if (this.settingTab.containerEl.isConnected) this.settingTab.display();
   }
 
   private async persistAuth(): Promise<void> {

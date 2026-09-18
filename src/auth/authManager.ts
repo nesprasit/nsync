@@ -19,33 +19,52 @@ export const LOOPBACK_REDIRECT = `http://${LOOPBACK_HOST}:${LOOPBACK_PORT}`;
 export const MOBILE_CALLBACK_ACTION = "nsync-auth";
 export const MOBILE_CALLBACK_URL = `obsidian://${MOBILE_CALLBACK_ACTION}`;
 
-interface PendingMobile {
+/** A mobile sign-in waiting for its obsidian:// callback. */
+export interface PendingAuth {
   verifier: string;
   state: string;
   redirect: string;
-  resolve: (t: TokenSet) => void;
-  reject: (e: Error) => void;
+  createdAt: number;
 }
 
-export class AuthManager {
-  private pendingMobile: PendingMobile | null = null;
+/**
+ * Where the pending mobile sign-in is kept. It must survive the app being
+ * suspended or reloaded while the user is in Safari, so it can't live only in
+ * memory.
+ */
+export interface PendingAuthStore {
+  load(): Promise<PendingAuth | null>;
+  save(p: PendingAuth | null): Promise<void>;
+}
 
+const PENDING_TTL_MS = 15 * 60_000;
+
+export class AuthManager {
   /**
    * @param openExternal opens a URL in the system browser.
    * @param mobileBridge the https page that forwards ?code&state to
    *   obsidian://nsync-auth (required on mobile only).
+   * @param pending persistence for the in-flight mobile sign-in.
    */
   constructor(
     private readonly openExternal: (url: string) => void,
     private readonly mobileBridge: () => string,
+    private readonly pending: PendingAuthStore,
   ) {}
 
-  async signIn(): Promise<TokenSet> {
+  /**
+   * Desktop: resolves with the token once the loopback receives the code.
+   * Mobile: opens the browser and resolves null; the token arrives later via
+   * completeMobile() when obsidian://nsync-auth fires.
+   */
+  async signIn(): Promise<TokenSet | null> {
     const { verifier, challenge } = await createPkcePair();
     const state = crypto.randomUUID();
-    return Platform.isMobile
-      ? this.signInMobile(verifier, challenge, state)
-      : this.signInDesktop(verifier, challenge, state);
+    if (Platform.isMobile) {
+      await this.startMobile(verifier, challenge, state);
+      return null;
+    }
+    return this.signInDesktop(verifier, challenge, state);
   }
 
   // --- desktop: one-shot loopback server ---------------------------------
@@ -87,37 +106,25 @@ export class AuthManager {
 
   // --- mobile: https bridge -> obsidian:// callback ----------------------
 
-  private signInMobile(verifier: string, challenge: string, state: string): Promise<TokenSet> {
+  private async startMobile(verifier: string, challenge: string, state: string): Promise<void> {
     const redirect = this.mobileBridge().trim();
-    if (!redirect) {
-      return Promise.reject(
-        new Error("Set the mobile redirect bridge URL in settings first."),
-      );
-    }
-    return new Promise<TokenSet>((resolve, reject) => {
-      this.pendingMobile = { verifier, state, redirect, resolve, reject };
-      this.openExternal(buildAuthUrl(challenge, redirect, state));
-      setTimeout(() => {
-        if (this.pendingMobile) {
-          this.pendingMobile.reject(new Error("Sign-in timed out"));
-          this.pendingMobile = null;
-        }
-      }, 300_000);
-    });
+    if (!redirect) throw new Error("Set the mobile redirect bridge URL in settings first.");
+    // Persist before leaving the app: iOS may reload Obsidian while in Safari.
+    await this.pending.save({ verifier, state, redirect, createdAt: Date.now() });
+    this.openExternal(buildAuthUrl(challenge, redirect, state));
   }
 
-  /** Called by main.ts when obsidian://nsync-auth fires. */
-  async handleMobileCallback(params: ObsidianProtocolData): Promise<void> {
-    const p = this.pendingMobile;
-    if (!p) return;
-    this.pendingMobile = null;
-    try {
-      if (params.error) throw new Error(`Google returned error: ${params.error}`);
-      if (!params.code) throw new Error("No authorization code returned");
-      if (params.state !== p.state) throw new Error("State mismatch (possible CSRF)");
-      p.resolve(await exchangeCode(params.code, p.verifier, p.redirect));
-    } catch (e) {
-      p.reject(e as Error);
+  /** Called by main.ts when obsidian://nsync-auth fires. Returns the new token. */
+  async completeMobile(params: ObsidianProtocolData): Promise<TokenSet> {
+    const p = await this.pending.load();
+    if (!p) throw new Error("No sign-in in progress. Tap Sign in again.");
+    await this.pending.save(null); // single use
+    if (Date.now() - p.createdAt > PENDING_TTL_MS) {
+      throw new Error("Sign-in expired. Tap Sign in again.");
     }
+    if (params.error) throw new Error(`Google returned error: ${params.error}`);
+    if (!params.code) throw new Error("No authorization code returned");
+    if (params.state !== p.state) throw new Error("State mismatch (possible CSRF)");
+    return exchangeCode(params.code, p.verifier, p.redirect);
   }
 }

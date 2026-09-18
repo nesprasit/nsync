@@ -47,6 +47,15 @@ export class DriveClient {
 
   // --- reads --------------------------------------------------------------
 
+  /** The signed-in Google account (works with the drive.appdata scope). */
+  async about(): Promise<{ email?: string; name?: string }> {
+    const res = await this.req({
+      url: "https://www.googleapis.com/drive/v3/about?fields=user(emailAddress,displayName)",
+      headers: await this.authHeaders(),
+    });
+    return { email: res.json.user?.emailAddress, name: res.json.user?.displayName };
+  }
+
   /** List all non-trashed files in appDataFolder (paginated). */
   async list(): Promise<DriveFile[]> {
     const files: DriveFile[] = [];

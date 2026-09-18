@@ -37,7 +37,13 @@ export class NSyncSettingTab extends PluginSettingTab {
 
     new Setting(containerEl)
       .setName("Google account")
-      .setDesc(this.plugin.isAuthed() ? "Connected." : "Not connected.")
+      .setDesc(
+        this.plugin.isAuthed()
+          ? this.plugin.accountEmail
+            ? `Signed in as ${this.plugin.accountEmail}`
+            : "Signed in."
+          : "Not signed in.",
+      )
       .addButton((b) =>
         b
           .setButtonText(this.plugin.isAuthed() ? "Sign out" : "Sign in with Google")
