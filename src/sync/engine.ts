@@ -12,6 +12,9 @@ import {
   tombstoneName,
 } from "./namespace";
 import { sha1 } from "./hash";
+import { emptyResult, tally, type SyncProgress, type SyncResult } from "./progress";
+
+export type ProgressFn = (p: SyncProgress) => void;
 
 // Three-state reconciliation: local (L) vs remote (R) vs last-synced base (the
 // index, B). Decisions follow CONTEXT.md:
@@ -46,12 +49,20 @@ export class SyncEngine {
     this.tombstones = new TombstoneStore(drive);
   }
 
-  /** Entry point for both the manual button and the 60s timer. Non-reentrant. */
-  async sync(): Promise<void> {
-    if (this.running) return; // sync lock: never run two passes at once
+  get isRunning(): boolean {
+    return this.running;
+  }
+
+  /**
+   * Entry point for both the manual button and the 60s timer. Non-reentrant:
+   * returns null without doing anything if a pass is already running.
+   */
+  async sync(onProgress: ProgressFn = () => {}): Promise<SyncResult | null> {
+    if (this.running) return null; // sync lock: never run two passes at once
     this.running = true;
     try {
       const ns = this.store.namespace;
+      onProgress({ phase: "listing", done: 0, total: 0 });
       let remoteFiles = await this.drive.list();
       if (this.store.needsLegacyMigration) {
         await this.migrateLegacy(remoteFiles, ns);
@@ -59,15 +70,17 @@ export class SyncEngine {
       }
       await this.tombstones.load(remoteFiles, tombstoneName(ns));
 
-      const local = await this.scanLocal();
+      const local = await this.scanLocal(onProgress);
       const remote = this.mapRemote(remoteFiles, ns);
       const actions = this.reconcile(local, remote);
       const stop = massDeleteReason(actions, Object.keys(this.store.index).length);
       if (stop) throw new Error(stop);
-      await this.apply(actions, ns);
+      const result = emptyResult();
+      await this.apply(actions, ns, onProgress, result);
 
       await this.tombstones.flush();
       await this.store.persist();
+      return result;
     } finally {
       this.running = false;
     }
@@ -96,10 +109,12 @@ export class SyncEngine {
   // --- scanning -----------------------------------------------------------
 
   /** Hash every eligible vault file (first run has no index -> full hash). */
-  private async scanLocal(): Promise<Map<string, FileState>> {
+  private async scanLocal(onProgress: ProgressFn): Promise<Map<string, FileState>> {
     const out = new Map<string, FileState>();
-    for (const f of this.app.vault.getFiles()) {
-      if (isExcluded(f.path)) continue;
+    const files = this.app.vault.getFiles().filter((f) => !isExcluded(f.path));
+    let done = 0;
+    for (const f of files) {
+      onProgress({ phase: "scanning", done: ++done, total: files.length });
       if (Platform.isMobile && f.stat.size > MOBILE_MAX_BYTES) {
         // Too big to sync on mobile, but the file DOES exist — mark it unchanged
         // (hash from the index) so it is never mistaken for a local deletion and
@@ -146,15 +161,20 @@ export class SyncEngine {
 
   // --- execution ----------------------------------------------------------
 
-  private async apply(actions: SyncAction[], ns: string): Promise<void> {
+  private async apply(
+    actions: SyncAction[],
+    ns: string,
+    onProgress: ProgressFn,
+    result: SyncResult,
+  ): Promise<void> {
     const idx = this.store.index;
     const now = Date.now();
+    const work = actions.filter((a) => a.kind !== "noop");
 
-    for (const a of actions) {
+    let done = 0;
+    for (const a of work) {
+      onProgress({ phase: "applying", done: ++done, total: work.length, action: a.kind, path: a.path });
       switch (a.kind) {
-        case "noop":
-          break;
-
         case "forget":
           delete idx[a.path];
           this.tombstones.add(a.path, this.store.deviceId);
@@ -177,7 +197,7 @@ export class SyncEngine {
         }
 
         case "download": {
-          if (Platform.isMobile && a.size && a.size > MOBILE_MAX_BYTES) break;
+          if (Platform.isMobile && a.size && a.size > MOBILE_MAX_BYTES) continue; // skipped, not counted
           const data = await this.drive.download(a.remoteFileId);
           await this.writeLocal(a.path, data);
           idx[a.path] = {
@@ -209,6 +229,7 @@ export class SyncEngine {
           await this.resolveConflict(a, now, ns);
           break;
       }
+      tally(result, a.kind);
     }
   }
 

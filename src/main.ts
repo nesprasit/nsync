@@ -1,4 +1,5 @@
-import { Notice, Platform, Plugin } from "obsidian";
+import { Notice, Platform, Plugin, setTooltip } from "obsidian";
+import { progressText, summaryText, type SyncProgress } from "./sync/progress";
 import { DEFAULT_SETTINGS, NSyncSettingTab, type NSyncSettings } from "./settings";
 import { IndexStore } from "./sync/indexStore";
 import { SyncEngine } from "./sync/engine";
@@ -36,8 +37,11 @@ export default class NSyncPlugin extends Plugin {
   private drive!: DriveClient;
   private authManager!: AuthManager;
   private settingTab!: NSyncSettingTab;
+  private statusBar!: HTMLElement;
   private auth: PersistedAuth = {};
   private timer: number | null = null;
+  /** Last auto-sync error shown, so a failing 60s timer notifies once, not every minute. */
+  private lastAutoError: string | null = null;
 
   async onload(): Promise<void> {
     await this.loadSettings();
@@ -55,13 +59,19 @@ export default class NSyncPlugin extends Plugin {
       },
     );
 
-    // Ribbon button + command = the manual "Sync" trigger (CONTEXT Q6).
-    this.addRibbonIcon("refresh-cw", "NSync: sync vault", () => this.runSync());
+    // Ribbon button, command and status bar = the manual "Sync" trigger (CONTEXT Q6).
+    this.addRibbonIcon("refresh-cw", "NSync: sync vault", () => this.runSync(true));
     this.addCommand({
       id: "nsync-now",
       name: "Sync now",
-      callback: () => this.runSync(),
+      callback: () => this.runSync(true),
     });
+
+    // Desktop only in practice: Obsidian mobile has no status bar.
+    this.statusBar = this.addStatusBarItem();
+    this.statusBar.addClass("mod-clickable");
+    this.statusBar.onClickEvent(() => this.runSync(true));
+    this.setStatus(this.isAuthed() ? "NSync" : "NSync: signed out", "Click to sync now");
     this.addCommand({
       id: "nsync-show-remote",
       name: "Show files on Drive",
@@ -99,23 +109,65 @@ export default class NSyncPlugin extends Plugin {
     this.timer = null;
     if (!this.settings.autoSyncEnabled) return;
     this.timer = window.setInterval(
-      () => this.runSync(),
+      () => this.runSync(false),
       this.settings.autoSyncSeconds * 1000,
     );
     this.registerInterval(this.timer);
   }
 
-  private async runSync(): Promise<void> {
+  /**
+   * @param manual true for the button/command: shows a live progress notice.
+   *   The 60s auto-sync only updates the status bar, so it stays quiet.
+   */
+  private async runSync(manual: boolean): Promise<void> {
     if (!this.isAuthed()) {
-      new Notice("NSync: not signed in.");
+      if (manual) new Notice("NSync: not signed in.");
       return;
     }
-    try {
-      await this.engine.sync();
-    } catch (e) {
-      console.error("NSync failed", e);
-      new Notice(`NSync failed: ${(e as Error).message}`);
+    if (this.engine.isRunning) {
+      if (manual) new Notice("NSync: a sync is already running.");
+      return;
     }
+
+    const notice = manual ? new Notice("NSync: starting…", 0) : null;
+    let lastPaint = 0;
+    const onProgress = (p: SyncProgress) => {
+      this.setStatus(`NSync ↻ ${progressText(p)}`);
+      // Scanning can report thousands of files; repaint the notice at most ~10x/s.
+      const now = Date.now();
+      if (notice && (p.phase !== "scanning" || now - lastPaint > 100)) {
+        notice.setMessage(`NSync: ${progressText(p, true)}`);
+        lastPaint = now;
+      }
+    };
+
+    try {
+      const result = await this.engine.sync(onProgress);
+      if (!result) {
+        notice?.hide();
+        return;
+      }
+      const summary = summaryText(result);
+      const time = new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+      this.setStatus(`NSync ✓ ${time}`, `Last sync ${time}: ${summary}. Click to sync now.`);
+      this.lastAutoError = null;
+      if (notice) {
+        notice.setMessage(`NSync: ${summary}`);
+        window.setTimeout(() => notice.hide(), 4000);
+      }
+    } catch (e) {
+      const msg = (e as Error).message;
+      console.error("NSync failed", e);
+      notice?.hide();
+      this.setStatus("NSync ⚠ failed", `${msg} Click to retry.`);
+      if (manual || msg !== this.lastAutoError) new Notice(`NSync failed: ${msg}`);
+      if (!manual) this.lastAutoError = msg;
+    }
+  }
+
+  private setStatus(text: string, tooltip?: string): void {
+    this.statusBar.setText(text);
+    if (tooltip) setTooltip(this.statusBar, tooltip, { placement: "top" });
   }
 
   /** Read-only browser for the hidden appDataFolder (the Drive UI can't show it). */
@@ -163,6 +215,7 @@ export default class NSyncPlugin extends Plugin {
       this.auth = {};
       await this.persistAuth();
       new Notice("NSync: signed out.");
+      this.setStatus("NSync: signed out");
       this.refreshSettingTab();
       return;
     }
@@ -182,6 +235,7 @@ export default class NSyncPlugin extends Plugin {
     await this.persistAuth();
     await this.refreshAccountEmail();
     new Notice(this.auth.email ? `NSync: signed in as ${this.auth.email}` : "NSync: signed in.");
+    this.setStatus("NSync", "Click to sync now");
     this.refreshSettingTab();
   }
 
