@@ -90,10 +90,38 @@ minutes, once. Every device and vault can then reuse it.
 
 ### 2. Install the plugin
 
-- **Manual install:** download `main.js`, `manifest.json` and `styles.css` from the
-  [latest release](https://github.com/nesprasit/nsync/releases) into
-  `<your vault>/.obsidian/plugins/nsync/`.
-- Then **Settings → Community plugins** → enable **NSync**.
+Pick one. BRAT is easiest, especially on a phone, and keeps NSync up to date.
+
+#### Option A: BRAT (desktop and mobile, recommended)
+
+[BRAT](https://github.com/TfTHacker/obsidian42-brat) installs plugins straight
+from their GitHub releases. Do this **in each vault** where you want NSync:
+
+1. **Settings → Community plugins** → turn on community plugins if asked →
+   **Browse** → search **BRAT** → **Install** → **Enable**.
+2. Open **BRAT's settings** → **Add beta plugin**.
+3. Enter the repository **`nesprasit/nsync`**, keep **Latest version**, tick
+   **Enable after installing the plugin**, then **Add plugin**.
+4. NSync now appears under **Community plugins** and in the settings sidebar.
+
+Updates: BRAT can check for new releases when Obsidian starts (turn on its
+auto-update option), or run **BRAT: Check for updates to all beta plugins** from
+the command palette. Updating only replaces the plugin files; your NSync
+settings and sign-in are kept.
+
+#### Option B: Manual install
+
+1. Download `main.js`, `manifest.json` and `styles.css` from the
+   [latest release](https://github.com/nesprasit/nsync/releases).
+2. Put them in `<your vault>/.obsidian/plugins/nsync/` (create the folder;
+   `.obsidian` is hidden, so on macOS press `Cmd+Shift+.` in Finder to see it).
+3. **Settings → Community plugins** → enable **NSync**.
+
+On iPhone/iPad the Files app can't open the hidden `.obsidian` folder, so use
+BRAT there.
+
+> Once NSync is listed in Obsidian's community plugin browser, you can install
+> it there instead and let Obsidian handle updates.
 
 ### 3. Connect
 
@@ -114,8 +142,12 @@ After you allow access, Safari/Chrome sends you back to Obsidian.
 
 ### 4. More devices and vaults
 
-- Install NSync in the same vault on the other device, enter the same OAuth
-  client, and sign in with the **same Google account**.
+- Set up the first device and sync it before adding more, so Google Drive
+  already has your notes when the next device joins.
+- Install NSync in the same vault on the other device (BRAT is easiest on a
+  phone), enter the same OAuth client, and sign in with the **same Google
+  account**. Copying the Client ID and secret on your computer and pasting on
+  the phone (e.g. Apple's Universal Clipboard) saves typing.
 - Devices pair up by **Vault name on Google Drive** (settings). It defaults to the vault
   folder name. Make it identical on every device for the same vault.
 - Each vault signs in separately, but one Google account can hold many vaults.
