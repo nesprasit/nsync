@@ -1,7 +1,14 @@
 import { type App, Platform, PluginSettingTab, Setting } from "obsidian";
 import type NSyncPlugin from "./main";
+import { LOOPBACK_REDIRECT } from "./auth/authManager";
+import { parseClientJson } from "./auth/client";
+
+const SETUP_GUIDE = "https://github.com/nesprasit/nsync#1-google-cloud-setup";
 
 export interface NSyncSettings {
+  /** The user's own Google Cloud OAuth client (bring your own credentials). */
+  clientId: string;
+  clientSecret: string;
   /** Auto-sync interval in seconds (CONTEXT: default 60). */
   autoSyncSeconds: number;
   /** Whether the 60s timer runs at all (button still works when off). */
@@ -18,11 +25,13 @@ export interface NSyncSettings {
 }
 
 export const DEFAULT_SETTINGS: NSyncSettings = {
+  clientId: "",
+  clientSecret: "",
   autoSyncSeconds: 60,
   autoSyncEnabled: true,
   trashRetentionDays: 30,
-  // Personal build: default to this project's own GitHub Pages bridge so mobile
-  // sign-in needs no typing. Still editable in settings.
+  // A static page that only forwards ?code&state into Obsidian; anyone can use
+  // it as long as they register it on their own OAuth client. Editable.
   mobileRedirectBridge: "https://nesprasit.github.io/nsync/callback.html",
 };
 
@@ -34,6 +43,8 @@ export class NSyncSettingTab extends PluginSettingTab {
   display(): void {
     const { containerEl } = this;
     containerEl.empty();
+
+    this.renderOAuthClient(containerEl);
 
     new Setting(containerEl)
       .setName("Google account")
@@ -122,5 +133,69 @@ export class NSyncSettingTab extends PluginSettingTab {
             }),
         );
     }
+  }
+
+  /** "Bring your own credentials": the user's Google Cloud OAuth client. */
+  private renderOAuthClient(containerEl: HTMLElement): void {
+    new Setting(containerEl).setName("Google OAuth client").setHeading();
+
+    const intro = containerEl.createEl("p", { cls: "setting-item-description" });
+    intro.appendText(
+      "NSync signs in with your own Google Cloud OAuth client, so your data never " +
+        "goes through anyone else's app. ",
+    );
+    intro.createEl("a", { text: "Setup guide (about 10 minutes)", href: SETUP_GUIDE });
+
+    let id = this.plugin.settings.clientId;
+    let secret = this.plugin.settings.clientSecret;
+    let secretInput: HTMLInputElement | null = null;
+
+    new Setting(containerEl)
+      .setName("Client ID")
+      .setDesc("Ends with .apps.googleusercontent.com. You can also paste the whole JSON file you downloaded.")
+      .addText((t) =>
+        t
+          .setPlaceholder("1234-abc.apps.googleusercontent.com")
+          .setValue(id)
+          .onChange((v) => {
+            const parsed = parseClientJson(v);
+            if (parsed) {
+              id = parsed.clientId;
+              secret = parsed.clientSecret;
+              t.setValue(id);
+              if (secretInput) secretInput.value = secret;
+            } else {
+              id = v.trim();
+            }
+          }),
+      );
+
+    new Setting(containerEl)
+      .setName("Client secret")
+      .addText((t) => {
+        t.inputEl.type = "password";
+        secretInput = t.inputEl;
+        t.setPlaceholder("GOCSPX-…")
+          .setValue(secret)
+          .onChange((v) => {
+            secret = v.trim();
+          });
+      })
+      .addButton((b) =>
+        b
+          .setButtonText("Save")
+          .setCta()
+          .onClick(async () => {
+            await this.plugin.setOAuthClient({ clientId: id, clientSecret: secret });
+            this.display();
+          }),
+      );
+
+    const uris = containerEl.createDiv({ cls: "setting-item-description" });
+    uris.createEl("p", { text: "Add both of these as Authorised redirect URIs on your OAuth client:" });
+    const list = uris.createEl("ul");
+    list.createEl("li").createEl("code", { text: LOOPBACK_REDIRECT });
+    list.createEl("li").createEl("code", { text: this.plugin.settings.mobileRedirectBridge });
+    uris.createEl("p", { text: "Saved credentials are remembered on this device for your other vaults." });
   }
 }

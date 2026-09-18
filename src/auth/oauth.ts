@@ -1,18 +1,15 @@
 import { requestUrl } from "obsidian";
-// Credentials live in credentials.ts (gitignored). The OAuth client is of type
-// "Web application" — the only type that lets one client register both the
-// desktop loopback and the mobile https bridge redirect URIs — and Google forces
-// client_secret at token exchange for web clients. PKCE still guards against
-// code interception. Never sync credentials.ts / data.json to Drive.
-import { CLIENT_ID, CLIENT_SECRET } from "./credentials";
+import type { OAuthClient } from "./client";
 
 // Google OAuth via PKCE.
 // - Desktop: loopback redirect (http://127.0.0.1:42813).
 // - Mobile:  https bridge page -> obsidian://nsync-auth callback.
-// Each user signs in with their own Google account, so files never mix; the
-// Client ID only identifies the app (Q20 = single shared client id).
+//
+// Each user brings their own Google Cloud OAuth client ("Web application", the
+// only type that can register both redirect URIs). Google requires the
+// client_secret at token exchange for web clients, so it is sent along with
+// PKCE; it comes from the user's settings and is never bundled in the plugin.
 
-export { CLIENT_ID, CLIENT_SECRET };
 export const SCOPE = "https://www.googleapis.com/auth/drive.appdata";
 
 const AUTH_ENDPOINT = "https://accounts.google.com/o/oauth2/v2/auth";
@@ -33,9 +30,14 @@ export async function createPkcePair(): Promise<{ verifier: string; challenge: s
   return { verifier, challenge: base64url(new Uint8Array(digest)) };
 }
 
-export function buildAuthUrl(challenge: string, redirectUri: string, stateNonce: string): string {
+export function buildAuthUrl(
+  client: OAuthClient,
+  challenge: string,
+  redirectUri: string,
+  stateNonce: string,
+): string {
   const p = new URLSearchParams({
-    client_id: CLIENT_ID,
+    client_id: client.clientId,
     redirect_uri: redirectUri,
     response_type: "code",
     scope: SCOPE,
@@ -54,42 +56,50 @@ export function buildAuthUrl(challenge: string, redirectUri: string, stateNonce:
 // --- token exchange -------------------------------------------------------
 
 export async function exchangeCode(
+  client: OAuthClient,
   code: string,
   verifier: string,
   redirect: string,
 ): Promise<TokenSet> {
-  const res = await requestUrl({
-    url: TOKEN_ENDPOINT,
-    method: "POST",
-    contentType: "application/x-www-form-urlencoded",
-    body: new URLSearchParams({
-      client_id: CLIENT_ID,
-      client_secret: CLIENT_SECRET,
-      code,
-      code_verifier: verifier,
-      grant_type: "authorization_code",
-      redirect_uri: redirect,
-    }).toString(),
+  const json = await postToken({
+    client_id: client.clientId,
+    client_secret: client.clientSecret,
+    code,
+    code_verifier: verifier,
+    grant_type: "authorization_code",
+    redirect_uri: redirect,
   });
-  return toTokenSet(res.json);
+  return toTokenSet(json);
 }
 
-export async function refresh(refreshToken: string): Promise<TokenSet> {
-  const res = await requestUrl({
-    url: TOKEN_ENDPOINT,
-    method: "POST",
-    contentType: "application/x-www-form-urlencoded",
-    body: new URLSearchParams({
-      client_id: CLIENT_ID,
-      client_secret: CLIENT_SECRET,
-      refresh_token: refreshToken,
-      grant_type: "refresh_token",
-    }).toString(),
+export async function refresh(client: OAuthClient, refreshToken: string): Promise<TokenSet> {
+  const json = await postToken({
+    client_id: client.clientId,
+    client_secret: client.clientSecret,
+    refresh_token: refreshToken,
+    grant_type: "refresh_token",
   });
-  const t = toTokenSet(res.json);
+  const t = toTokenSet(json);
   // Google may omit refresh_token on refresh; keep the old one.
   if (!t.refreshToken) t.refreshToken = refreshToken;
   return t;
+}
+
+/** POST to the token endpoint, surfacing Google's error text (e.g. invalid_client). */
+async function postToken(params: Record<string, string>): Promise<any> {
+  const res = await requestUrl({
+    url: TOKEN_ENDPOINT,
+    method: "POST",
+    contentType: "application/x-www-form-urlencoded",
+    body: new URLSearchParams(params).toString(),
+    throw: false,
+  });
+  if (res.status < 200 || res.status >= 300) {
+    const j = res.json ?? {};
+    const detail = j.error_description ? `${j.error}: ${j.error_description}` : j.error ?? res.status;
+    throw new Error(`Google token request failed (${detail})`);
+  }
+  return res.json;
 }
 
 function toTokenSet(json: any): TokenSet {

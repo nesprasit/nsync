@@ -1,196 +1,176 @@
 # NSync
 
-Sync an **Obsidian vault across desktop and mobile** through **your own Google
-Drive** — a single Obsidian community plugin (macOS · iOS · Android), no server,
-no third-party sync service.
+Sync your Obsidian vaults across desktop and mobile through **your own Google
+Drive**. One plugin for desktop and mobile (iOS, Android). No server, no
+third-party sync service, and no one else's app in the middle: you sign in with
+your own Google Cloud OAuth client.
 
-Files live in Drive's hidden **`appDataFolder`**, you sign in with **your own
-Google account**, and everything runs inside Obsidian.
-
-> สำหรับใช้เอง (personal use). ออกแบบให้ "เบา ไม่พึ่ง software อื่น" — ทุกอย่างเป็น
-> plugin ตัวเดียว เขียนด้วย TypeScript รันได้ทุก platform ที่ Obsidian รองรับ
+> ⚠️ **Early software. Back up your vault before the first sync.** NSync moves
+> and deletes files to keep devices in step. It has safety checks, but a backup
+> is the only real undo.
 
 ---
 
 ## Features
 
-- 🔁 **Two-way sync** — แก้ที่เครื่องไหนก็กระจายไปทุกเครื่อง
-- 🖥️📱 **ทุก platform จากโค้ดชุดเดียว** — Obsidian desktop + mobile (ไม่ใช้ Electron/React Native แยก)
-- 🔐 **Google OAuth (PKCE)** — login ด้วยบัญชีตัวเอง, ไฟล์ไม่ปนกันระหว่างผู้ใช้
-- 🗂️ **เก็บที่ `appDataFolder`** — scope แคบ (`drive.appdata`), ไม่ต้องผ่าน security assessment หนักของ Google
-- 🧩 **Conflict copy** — แก้ไฟล์เดียวกันพร้อมกันไม่ทำข้อมูลหาย (เก็บทั้งสองเวอร์ชัน)
-- 🪦 **Tombstones** — ลบไฟล์แล้วไม่ "ฟื้นคืนชีพ" แม้ต่อเครื่องใหม่
-- ⏱️ **Auto-sync ทุก 60 วิ + ปุ่ม manual**
-- 📵 **Mobile-aware** — ข้ามไฟล์ใหญ่ > 50MB บนมือถือ
-
-การตัดสินใจเชิงออกแบบดูได้ที่ [CONTEXT.md](CONTEXT.md) และ [docs/adr/](docs/adr/).
+- 🔁 **Two-way sync** between any number of devices
+- 🗂️ **Many vaults, one Google account.** Each vault is kept separate on Drive
+- 🔐 **Your own OAuth client.** Nothing goes through the plugin author
+- 🧩 **Conflict copies.** Editing the same note on two devices keeps both versions
+- 🪦 **Deletes stay deleted**, even on a device that joins later
+- 🛑 **Safety stop.** A sync that would delete most of a vault is refused
+- ⏱️ **Auto-sync every 60 s** plus a manual sync button, with live progress
+- 👀 **Show files on Drive.** Browse what's stored, since Drive's own UI can't
+- 📵 **Mobile-aware.** Skips files over 50 MB on phones
 
 ---
 
 ## How it works
 
-```
-Obsidian (desktop/mobile)
-        │  Vault API (อ่าน/เขียนไฟล์)
-        ▼
-   NSync plugin ──── 3-way reconcile ────┐
-        │  local index (data.json)        │
-        ▼                                  ▼
-  Google Drive REST  ◄────────────  appDataFolder
-   (requestUrl, PKCE)                (ไฟล์ vault + tombstones)
-```
+Files are stored in your Google Drive's hidden **`appDataFolder`**, which only
+the OAuth client that created it can read. NSync asks for the narrow
+`drive.appdata` scope and cannot see any of your other Drive files.
 
-Reconcile เทียบ 3 สถานะต่อไฟล์: **local** × **remote** × **base** (index ที่ sync
-สำเร็จครั้งก่อน) แล้วตัดสินว่าจะ upload / download / conflict / delete — logic นี้
-เป็น pure function ([src/sync/reconcile.ts](src/sync/reconcile.ts)) และมี unit test
-ครอบทุกเคส ([test/reconcile.test.ts](test/reconcile.test.ts)).
+Each sync compares three states per file: this device, Google Drive, and the
+last successful sync. From that it decides to upload, download, delete, or keep
+both copies on a conflict.
 
----
+### Network use
 
-## Prerequisites
+NSync connects to:
 
-- Node.js ≥ 18 (dev ใช้ 22)
-- Obsidian ≥ 1.5.0
-- Google account + Google Cloud project (ฟรี)
+- `accounts.google.com`, `oauth2.googleapis.com` to sign in
+- `www.googleapis.com` for the Google Drive API
+- `nesprasit.github.io/nsync/callback.html`, **mobile sign-in only**. It's a
+  static page that hands Google's sign-in code back to Obsidian. It stores
+  nothing, and the code is useless without a secret that never leaves your
+  device. You can host your own copy ([callback.html](callback.html)) and set
+  its URL in settings.
+
+No analytics or telemetry.
 
 ---
 
-## 1. Google Cloud setup
+## Setup
 
-1. เปิด [Google Cloud Console](https://console.cloud.google.com/) → สร้าง project
-2. **APIs & Services → Library** → เปิด **Google Drive API**
-3. **OAuth consent screen**
-   - User type: **External**
-   - เพิ่ม scope: `https://www.googleapis.com/auth/drive.appdata`
-   - **Publishing status → Publish to Production**
-     (ถ้าปล่อยไว้ "Testing" refresh token จะหมดอายุทุก ~7 วัน)
-   - ยอมรับหน้าเตือน "unverified app" ได้ — เป็นแอปของคุณเอง (จำกัด 100 users)
-4. **Credentials → Create credentials → OAuth client ID**
-   - Application type: **Web application** ← สำคัญ (type อื่นเพิ่ม redirect URI ได้ไม่ครบ)
-   - **Authorised redirect URIs** → Add:
-     - `http://127.0.0.1:42813`  (desktop loopback)
-     - `https://<คุณ>.github.io/nsync/callback.html`  (mobile bridge)
-5. copy **Client ID** + **Client Secret**
+You need a Google Cloud OAuth client of your own. It's free and takes about 10
+minutes, once. Every device and vault can then reuse it.
 
-> ⏳ การแก้ redirect URIs อาจใช้เวลา 5 นาที–ไม่กี่ชั่วโมงกว่าจะมีผล
+### 1. Google Cloud setup
 
----
+1. Open the [Google Cloud Console](https://console.cloud.google.com/) and
+   **create a project** (any name).
+2. **APIs & Services → Library** → search **Google Drive API** → **Enable**.
+3. Open **Google Auth Platform** (called *OAuth consent screen* in some
+   accounts).
+   - **Branding:** app name (e.g. `NSync`), your support email, your developer
+     contact email.
+     - Home page: `https://nesprasit.github.io/nsync/`
+     - Privacy policy: `https://nesprasit.github.io/nsync/privacy.html`
+       (or your own pages if you host the bridge yourself).
+   - **Audience:** User type **External**, then **Publish app**.
+     If you stay in *Testing* instead, add your Google account under
+     **Test users**, but sign-in will expire every 7 days.
+   - **Data access:** **Add or remove scopes** → add
+     `https://www.googleapis.com/auth/drive.appdata`.
+4. **Clients → Create client**
+   - Application type: **Web application**. (Other types can't register both
+     redirect URIs below.)
+   - **Authorised redirect URIs**, add both:
+     - `http://127.0.0.1:42813`
+     - `https://nesprasit.github.io/nsync/callback.html`
+   - **Create**, then copy the **Client ID** and **Client secret**, or
+     **download the JSON**.
 
-## 2. ใส่ credentials
+> ⏳ Changes to redirect URIs can take a few minutes to a few hours to apply.
+> `redirect_uri_mismatch` right after setup usually just means "wait".
 
-```bash
-cp src/auth/credentials.example.ts src/auth/credentials.ts
-```
+### 2. Install the plugin
 
-แล้วแก้ [src/auth/credentials.ts](src/auth/credentials.example.ts) ใส่ค่าจริง:
+- **Manual install:** download `main.js` and `manifest.json` from the
+  [latest release](https://github.com/nesprasit/nsync/releases) into
+  `<your vault>/.obsidian/plugins/nsync/`.
+- Then **Settings → Community plugins** → enable **NSync**.
 
-```ts
-export const CLIENT_ID = "xxxx.apps.googleusercontent.com";
-export const CLIENT_SECRET = "GOCSPX-xxxx";
-```
+### 3. Connect
 
-> `credentials.ts` ถูก **gitignore** ไว้แล้ว — อย่า commit ค่าจริงขึ้น GitHub
+1. **Settings → NSync → Google OAuth client:** paste your Client ID and Client
+   secret, or paste the whole downloaded JSON into the Client ID field. Then
+   **Save**. The credentials are remembered on this device for your other
+   vaults.
+2. **Sign in with Google.** Because the app is yours and unverified, Google
+   shows *"Google hasn't verified this app"*: choose **Advanced → Go to
+   (your app name)** → **Continue**.
+3. Press 🔄 in the ribbon (or click NSync in the status bar) to sync.
 
----
+On a phone, **Sign in** opens a small window. Tap **Open Google sign-in**.
+After you allow access, Safari/Chrome sends you back to Obsidian.
 
-## 3. Build & install
+### 4. More devices and vaults
 
-```bash
-npm install
-npm run build      # สร้าง main.js
-```
-
-copy 2 ไฟล์ไปที่โฟลเดอร์ plugin ของ vault:
-
-```bash
-<vault>/.obsidian/plugins/nsync/
-├── manifest.json
-└── main.js
-```
-
-เปิด Obsidian → **Settings → Community plugins** → เปิด **NSync**
-
----
-
-## 4. Deploy mobile bridge (เฉพาะถ้าจะใช้บนมือถือ)
-
-Google ไม่รับ custom scheme (`obsidian://`) เป็น redirect โดยตรง จึงต้องมีหน้า
-https กลาง 1 หน้าเพื่อ forward code กลับเข้า Obsidian
-
-1. สร้าง repo `nsync` บน GitHub
-2. [callback.html](callback.html) อยู่ที่ root ของ repo อยู่แล้ว
-3. **Settings → Pages** → serve จาก branch `main` (root)
-4. เช็กว่าเปิด `https://<คุณ>.github.io/nsync/callback.html` ได้จริง
-5. URL นี้ต้องตรงกับ Redirect URI ข้อ 1.4 เป๊ะๆ
-
-หน้านี้เป็น static ล้วน ไม่มี server logic ไม่มี secret — ปลอดภัยที่จะ host
+- Install NSync in the same vault on the other device, enter the same OAuth
+  client, and sign in with the **same Google account**.
+- Devices pair up by **Vault name on Drive** (settings). It defaults to the vault
+  folder name. Make it identical on every device for the same vault.
+- Each vault signs in separately, but one Google account can hold many vaults.
 
 ---
 
-## 5. ใช้งาน
+## Usage
 
-- **Sign in**: Settings → NSync → *Sign in with Google*
-- **Sync**: กดไอคอน 🔄 บน ribbon หรือ command palette → *NSync: Sync now*
-- **Auto-sync**: เปิด/ปิด + ตั้ง interval ได้ใน settings (default 60 วิ)
-- **Mobile**: วาง Bridge URL ในช่อง settings (โผล่เฉพาะบนมือถือ) ก่อน sign in
-- **หลาย vault**: บัญชี Google เดียว sync ได้หลาย vault — แต่ละ vault แยกกันด้วย
-  **Vault name on Drive** (ค่าเริ่มต้น = ชื่อ vault) ต้องตั้งให้ **ตรงกันทุกเครื่อง**
-  จึงจะจับคู่เป็น vault เดียวกัน
+| | |
+|---|---|
+| Sync now | ribbon 🔄, command *NSync: Sync now*, or click the status bar |
+| Status (desktop) | status bar cloud: green = synced, spinning = syncing, red = failed |
+| Browse Drive | command *NSync: Show files on Drive* |
+| Auto-sync | on by default, every 60 s while Obsidian is open (settings) |
 
-> 📱 บนมือถือ Obsidian รัน plugin เฉพาะตอนแอปเปิด — auto-sync จะทำงานตอนเปิดแอป
-> และตอนกดปุ่ม ไม่มี background sync จริง (ข้อจำกัดของ OS)
+On mobile, Obsidian only runs plugins while the app is open, so syncing happens
+when you open the app and when you press sync. There's no background sync.
+
+---
+
+## Privacy & security
+
+- Your notes go straight between your device and **your** Google Drive.
+  Nothing passes through the plugin author.
+- OAuth tokens and your client secret are stored only in this vault's plugin
+  data on this device. NSync never uploads them.
+- Files in `appDataFolder` are not end-to-end encrypted. Google can read them,
+  as with any Drive file.
+- To remove everything: revoke access at
+  [myaccount.google.com/permissions](https://myaccount.google.com/permissions),
+  or Drive → Settings → Manage apps → your app → *Delete hidden app data*.
+
+## Limitations
+
+- No real-time push. Changes arrive on the next sync (default 60 s).
+- `.obsidian` settings, themes and plugins are not synced.
+- No end-to-end encryption yet.
 
 ---
 
 ## Development
 
 ```bash
-npm run dev        # esbuild watch mode
-npm run typecheck  # tsc --noEmit
+npm install
+npm run dev        # esbuild watch
+npm run build      # typecheck + production bundle (main.js)
 npm test           # unit tests (node --test + tsx)
 ```
 
-โครงสร้าง:
-
 ```
 src/
-├── main.ts              plugin entry, timer, auth glue
+├── main.ts              plugin entry, sync scheduling, auth glue
 ├── settings.ts          settings tab
-├── auth/
-│   ├── oauth.ts         PKCE + token endpoints
-│   ├── authManager.ts   desktop loopback / mobile bridge flows
-│   └── credentials.ts   (gitignored) CLIENT_ID / CLIENT_SECRET
+├── auth/                OAuth client, PKCE, desktop loopback + mobile bridge flows
 ├── drive/driveClient.ts Google Drive REST (appDataFolder)
-└── sync/
-    ├── reconcile.ts     pure 3-way decision (unit-tested)
-    ├── engine.ts        scan + apply + conflict handling
-    ├── tombstones.ts    shared delete markers (on Drive)
-    ├── indexStore.ts    per-device index (data.json)
-    ├── hash.ts          SHA-1 (Web Crypto)
-    └── types.ts         domain types
+├── sync/                reconcile (pure), engine, namespaces, tombstones, progress
+└── ui/                  status bar, modals
 ```
 
----
-
-## Security notes
-
-- **Refresh token เก็บ per-device** ใน `data.json` และ **ไม่ sync** ขึ้น Drive เด็ดขาด
-- `credentials.ts` และ `data.json` อยู่ใน `.gitignore`
-- ไฟล์ใน `appDataFolder` Google อ่านได้ (ยังไม่มี E2E encryption ใน v1)
-- ถ้าเคยเผลอ commit `CLIENT_SECRET` ขึ้น GitHub → ไป **rotate** ใน Cloud Console
-
----
-
-## Limitations (v1)
-
-- ไม่มี real-time push (poll ทุก 60 วิ)
-- ไม่มี background sync บนมือถือ
-- ยังไม่ใช้ Drive Changes API (ทำ full list ทุกครั้ง — พอสำหรับ vault ส่วนตัว)
-- retention purge ของ tombstone/trash ยังไม่ auto (มี API พร้อม แต่ยังไม่ wire)
-- ยังไม่มี E2E encryption
-
----
+Design notes: [CONTEXT.md](CONTEXT.md) and [docs/adr/](docs/adr/).
 
 ## License
 
-MIT
+[MIT](LICENSE)

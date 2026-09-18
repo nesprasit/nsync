@@ -5,6 +5,7 @@ import {
   exchangeCode,
   type TokenSet,
 } from "./oauth";
+import { clientProblem, type OAuthClient } from "./client";
 
 // Node/Electron are available on desktop only. Never import them statically —
 // the bundle would `require("http")` at load and crash Obsidian mobile. We
@@ -45,12 +46,22 @@ export class AuthManager {
    * @param mobileBridge the https page that forwards ?code&state to
    *   obsidian://nsync-auth (required on mobile only).
    * @param pending persistence for the in-flight mobile sign-in.
+   * @param getClient the user's own OAuth client from settings.
    */
   constructor(
     private readonly openExternal: (url: string) => void,
     private readonly mobileBridge: () => string,
     private readonly pending: PendingAuthStore,
+    private readonly getClient: () => OAuthClient,
   ) {}
+
+  /** The configured client, or an error telling the user what's missing. */
+  private client(): OAuthClient {
+    const c = this.getClient();
+    const problem = clientProblem(c);
+    if (problem) throw new Error(problem);
+    return c;
+  }
 
   /**
    * Desktop: resolves with the token once the loopback receives the code.
@@ -58,6 +69,7 @@ export class AuthManager {
    * completeMobile() when obsidian://nsync-auth fires.
    */
   async signIn(): Promise<TokenSet | null> {
+    this.client(); // fail fast, before opening a browser
     const { verifier, challenge } = await createPkcePair();
     const state = crypto.randomUUID();
     if (Platform.isMobile) {
@@ -88,14 +100,14 @@ export class AuthManager {
           if (err) return reject(new Error(`Google returned error: ${err}`));
           if (!code) return reject(new Error("No authorization code returned"));
           if (gotState !== state) return reject(new Error("State mismatch (possible CSRF)"));
-          resolve(await exchangeCode(code, verifier, LOOPBACK_REDIRECT));
+          resolve(await exchangeCode(this.client(), code, verifier, LOOPBACK_REDIRECT));
         } catch (e) {
           reject(e as Error);
         }
       });
       server.on("error", (e: Error) => reject(e));
       server.listen(LOOPBACK_PORT, LOOPBACK_HOST, () => {
-        this.openExternal(buildAuthUrl(challenge, LOOPBACK_REDIRECT, state));
+        this.openExternal(buildAuthUrl(this.client(), challenge, LOOPBACK_REDIRECT, state));
       });
       setTimeout(() => {
         try { server.close(); } catch { /* already closed */ }
@@ -111,7 +123,7 @@ export class AuthManager {
     if (!redirect) throw new Error("Set the mobile redirect bridge URL in settings first.");
     // Persist before leaving the app: iOS may reload Obsidian while in Safari.
     await this.pending.save({ verifier, state, redirect, createdAt: Date.now() });
-    this.openExternal(buildAuthUrl(challenge, redirect, state));
+    this.openExternal(buildAuthUrl(this.client(), challenge, redirect, state));
   }
 
   /** Called by main.ts when obsidian://nsync-auth fires. Returns the new token. */
@@ -125,6 +137,6 @@ export class AuthManager {
     if (params.error) throw new Error(`Google returned error: ${params.error}`);
     if (!params.code) throw new Error("No authorization code returned");
     if (params.state !== p.state) throw new Error("State mismatch (possible CSRF)");
-    return exchangeCode(params.code, p.verifier, p.redirect);
+    return exchangeCode(this.client(), params.code, p.verifier, p.redirect);
   }
 }

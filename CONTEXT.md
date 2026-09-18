@@ -32,19 +32,35 @@ It reads and writes the vault through Obsidian's Vault API (so iOS sandboxing is
 a non-issue: the plugin lives inside Obsidian's own sandbox). This replaces the
 earlier Electron-agent + React-Native-app design entirely.
 
-Built for personal use; "lightweight"; deliberately not depending on existing
-third-party sync software.
+"Lightweight", deliberately not depending on third-party sync software. Open
+to anyone: each user brings their own Google OAuth client (see *OAuth client*).
 
 ### Sync scope
-Syncs `.md` notes + attachments + `.obsidian/` config, but **excludes** churny
-files (`workspace.json`, `workspace-mobile.json`, caches). Attachment size limit
-to be decided.
+Syncs the vault's notes and attachments. The `.obsidian/` config folder
+(settings, themes, plugins) is **not** synced today, because Obsidian's vault
+file list doesn't include it. The original intent (sync config, excluding churny
+files like `workspace.json`) is an open question.
 
 ### Account model
 One Google account can sync **many vaults**. Each vault lives in its own
 **namespace** inside that account's `appDataFolder`, so vaults never mix. Every
 device signs in with the same account; each vault on each device signs in
 separately.
+
+Two independent layers, often confused:
+- **Account (who logs in)**: always the user's own Google account. Files land in
+  that account's own appDataFolder; different users' files never mix.
+- **OAuth client (which "app" requests access)**: also the user's own (see
+  *OAuth client*). `appDataFolder` is private to the client that created it, so
+  every device must use the **same** OAuth client to see the same files.
+
+### OAuth client
+The user's own Google Cloud OAuth client ("bring your own credentials"), of type
+*Web application* so it can register both the desktop loopback and the mobile
+bridge redirect URIs. Its Client ID and secret are entered in settings, stored
+only in the vault's local plugin data (and remembered in the device's
+localStorage to prefill other vaults), and never bundled or synced. Changing the
+Client ID signs out, since tokens belong to the client that issued them.
 
 ### Namespace
 The name that pairs the same vault across devices ("Vault name on Drive" in
@@ -59,15 +75,6 @@ A sync pass that would delete more than half of the vault's tracked files
 locally (and at least 5) is aborted before touching anything. That pattern
 almost always means a wrong namespace or a bad remote listing, not a real mass
 delete.
-
-Two independent layers, often confused:
-- **Account (who logs in)**: always the end user's own Google account. Files land
-  in that account's own appDataFolder; different users' files never mix.
-- **OAuth Client ID (which "app" requests access)**: a **single** Client ID that
-  the plugin author owns, embedded in the plugin (via PKCE — no client secret is
-  embedded). All users authenticate through this one app. Consequence: the app is
-  the author's, capped at 100 users while unverified. Sharing the Client ID does
-  not mix anyone's files.
 
 ### Sync trigger
 Manual "Sync" button + automatic sync every 60 seconds. No E2E encryption in v1
@@ -85,10 +92,11 @@ truth. A local index maps `path → {hash, remoteFileId, lastSyncRev}`, stored
 per-device and **excluded from sync**. The `remoteFileId` link is what makes
 rename/delete tracking possible.
 
-### Auth (decided: PKCE)
-Google OAuth via PKCE — no backend, no embedded client secret. The refresh
-token is the sensitive credential: stored per-device, **never** synced to Drive,
-kept out of the sync scope (OS keychain on desktop where possible).
+### Auth
+Google OAuth via PKCE with the user's own client, no backend. Google requires
+the client secret at token exchange for web clients, so it is sent alongside
+PKCE. The refresh token is the sensitive credential: stored per-device and
+**never** synced to Drive.
 
 ### Delete propagation
 A **tombstone** records that a file was deleted (when, by which device) so other
@@ -102,7 +110,8 @@ Tombstones still drive the *local* deletion on other devices.
 On a new device, **merge** local and remote: pull what's missing, and on
 collisions apply the conflict-copy rule. An empty local vault just pulls
 everything down. The first run has no index yet, so it hashes the whole vault
-once (a slow but one-time pass), then asks the user to confirm before writing.
+once (a slow but one-time pass). Asking the user to confirm before that first
+write was intended but is not built yet (see open questions).
 
 ### Attachment size limit
 Mobile-aware: desktop syncs all files; mobile skips files above ~50MB and shows
@@ -114,17 +123,18 @@ that the file exists on desktop only.
   true background execution, so mobile sync happens on app open / foreground and
   on the manual button — not silently in the background.
 - Google OAuth in "Testing" publishing status expires refresh tokens after ~7
-  days. Resolved by publishing the consent screen to **Production (unverified)**:
-  tokens no longer expire; users pass a one-time "unverified app" warning; capped
-  at 100 users (ample for personal use).
+  days. Each user avoids it by publishing their own client to **Production
+  (unverified)**: tokens no longer expire and they pass a one-time "unverified
+  app" warning for their own app.
 
 ### Distribution
-Personal use only. The plugin is **not** listed in the Obsidian community
-directory and is installed manually from a local build. The built `main.js`
-embeds the OAuth client secret, so it must never be attached to a public
-GitHub release or shared. Offering the plugin to others would mean switching to
-per-user OAuth credentials entered in settings.
+Public. The bundle contains no credentials, so releases can be shared freely;
+each user sets up their own OAuth client (see ADR-0004). Installed manually from
+a GitHub release for now.
 
 ## Open questions
 
-_(none — design tree fully explored)_
+- Confirm-before-first-sync, so a new user can't be surprised by the first write.
+- Whether to sync `.obsidian/` config (and which files to exclude).
+- Submitting to the Obsidian community directory (review against the plugin
+  guidelines; releases must carry `main.js` + `manifest.json`).

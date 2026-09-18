@@ -7,6 +7,14 @@ import { SyncEngine } from "./sync/engine";
 import { DriveClient } from "./drive/driveClient";
 import { refresh, type TokenSet } from "./auth/oauth";
 import { AuthManager, MOBILE_CALLBACK_ACTION, type PendingAuth } from "./auth/authManager";
+import { clientProblem, normalizeClient, type OAuthClient } from "./auth/client";
+
+/**
+ * Credentials are remembered per device (window.localStorage is shared by all
+ * vaults in the app) so each vault on this device doesn't need them re-entered.
+ * Never synced: NSync doesn't sync .obsidian, and localStorage isn't a file.
+ */
+const DEVICE_CLIENT_KEY = "nsync:oauth-client";
 import { isValidNamespace } from "./sync/namespace";
 import { summarizeRemote } from "./sync/remoteSummary";
 import { RemoteFilesModal } from "./ui/remoteFilesModal";
@@ -58,6 +66,7 @@ export default class NSyncPlugin extends Plugin {
         load: async () => ((await this.loadData())?.pendingAuth as PendingAuth | undefined) ?? null,
         save: async (p) => this.saveData({ ...(await this.loadData()), pendingAuth: p }),
       },
+      () => this.oauthClient(),
     );
 
     // Ribbon button, command and status bar = the manual "Sync" trigger (CONTEXT Q6).
@@ -212,6 +221,38 @@ export default class NSyncPlugin extends Plugin {
     return !!this.auth.token?.refreshToken;
   }
 
+  private oauthClient(): OAuthClient {
+    return normalizeClient(this.settings);
+  }
+
+  /** Save the user's OAuth client. Switching to a different client signs out. */
+  async setOAuthClient(c: OAuthClient): Promise<void> {
+    const next = normalizeClient(c);
+    const problem = clientProblem(next);
+    if (problem) {
+      new Notice(`NSync: ${problem}`);
+      return;
+    }
+    const changed = next.clientId !== this.settings.clientId;
+    this.settings.clientId = next.clientId;
+    this.settings.clientSecret = next.clientSecret;
+    await this.saveSettings();
+    try {
+      window.localStorage.setItem(DEVICE_CLIENT_KEY, JSON.stringify(next));
+    } catch {
+      // storage unavailable: vaults will just ask again
+    }
+    if (changed && this.isAuthed()) {
+      // Tokens are bound to the client that issued them.
+      this.auth = {};
+      await this.persistAuth();
+      this.showIdleStatus();
+      new Notice("NSync: OAuth client changed. Sign in again.");
+    } else {
+      new Notice("NSync: OAuth client saved.");
+    }
+  }
+
   /** Email of the signed-in Google account, if known. */
   get accountEmail(): string | undefined {
     return this.auth.email;
@@ -273,7 +314,10 @@ export default class NSyncPlugin extends Plugin {
     let t = this.auth.token;
     if (!t) throw new Error("Not authenticated");
     if (Date.now() > t.expiresAt - 60_000) {
-      t = await refresh(t.refreshToken);
+      const client = this.oauthClient();
+      const problem = clientProblem(client);
+      if (problem) throw new Error(problem);
+      t = await refresh(client, t.refreshToken);
       this.auth.token = t;
       await this.persistAuth();
     }
@@ -289,6 +333,15 @@ export default class NSyncPlugin extends Plugin {
     };
     this.settings = { ...DEFAULT_SETTINGS, ...data.settings };
     this.auth = data.auth ?? {};
+    // New vault on a device that already has credentials: reuse them.
+    if (!this.settings.clientId && !this.settings.clientSecret) {
+      try {
+        const saved = window.localStorage.getItem(DEVICE_CLIENT_KEY);
+        if (saved) Object.assign(this.settings, normalizeClient(JSON.parse(saved)));
+      } catch {
+        // ignore: the user can enter them in settings
+      }
+    }
   }
 
   async saveSettings(): Promise<void> {

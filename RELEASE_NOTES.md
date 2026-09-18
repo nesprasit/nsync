@@ -1,27 +1,27 @@
-# NSync 0.1.0
+# NSync 0.5.0
 
-First release. Sync an Obsidian vault across desktop and mobile through your own
-Google Drive — a single plugin, no server, no third-party sync service.
+First public release. Sync Obsidian vaults across desktop and mobile through
+your own Google Drive, using your own Google Cloud OAuth client. No server, no
+third-party sync service.
+
+> ⚠️ Early software. **Back up your vault before the first sync.**
 
 ## Highlights
-- 🔁 Two-way sync via Google Drive `appDataFolder`
-- 🖥️📱 One codebase for macOS desktop + iOS/Android
-- 🔐 Google OAuth (PKCE) — sign in with your own account; files never mix
-- 🧩 Conflict copies — concurrent edits never lose data
-- 🪦 Shared tombstones — deletes don't resurrect on new devices
-- ⏱️ Auto-sync every 60s + manual sync button
-- 📵 Mobile-aware — skips files > 50MB on mobile
+- 🔁 Two-way sync, desktop + iOS/Android, one plugin
+- 🗂️ Many vaults per Google account, kept separate by "Vault name on Drive"
+- 🔐 Bring your own OAuth client. The plugin ships no credentials
+- 🧩 Conflict copies, 🪦 deletes that stay deleted, 🛑 mass-delete safety stop
+- ⏱️ Auto-sync every 60 s, live progress, status bar icon (desktop)
+- 👀 *Show files on Drive* to browse NSync's hidden Drive folder
 
-## Install (manual)
-1. Download `main.js` and `manifest.json` below.
-2. Put them in `<vault>/.obsidian/plugins/nsync/`.
-3. Enable **NSync** in Settings → Community plugins.
-
-## Setup
-You need your own Google Cloud OAuth client (Web application) with the
-`drive.appdata` scope. See the [README](https://github.com/nesprasit/nsync#readme)
-for the full setup guide, including the mobile redirect bridge.
+## Install
+1. Download `main.js` and `manifest.json` below into
+   `<vault>/.obsidian/plugins/nsync/`.
+2. Enable **NSync** in Settings → Community plugins.
+3. Follow the [setup guide](https://github.com/nesprasit/nsync#setup) to create
+   your OAuth client (about 10 minutes, once).
 
 ## Known limitations
-- No real-time push (polls every 60s); no background sync on mobile.
+- No real-time push (syncs every 60 s); no background sync on mobile.
+- `.obsidian` settings/themes/plugins are not synced.
 - No end-to-end encryption yet.
