@@ -1,4 +1,4 @@
-# NSync 0.5.2
+# NSync 0.5.3
 
 First public release. NSync syncs your Obsidian vaults across desktop and mobile
 through **your own Google Drive**, signing in with **your own Google Cloud OAuth
@@ -6,6 +6,9 @@ client**. No server, no third-party sync service, nothing passes through the
 plugin author.
 
 > ⚠️ Early software. **Back up your vault before the first sync.**
+
+## New in 0.5.3
+- Clears the remaining automated-review warnings (typed the desktop sign-in helper so it no longer relies on Node type definitions).
 
 ## New in 0.5.2
 - Meets Obsidian's community plugin guidelines: styles moved to `styles.css`, stricter typing, clearer sentence-case UI text.

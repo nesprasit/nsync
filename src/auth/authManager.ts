@@ -9,8 +9,23 @@ import { clientProblem, type OAuthClient } from "./client";
 
 // Node is available on desktop only. Never import it statically: the bundle
 // would `require("http")` at load and crash Obsidian mobile. We require it
-// lazily inside the desktop-only branch instead (the type import is erased).
-type NodeHttp = typeof import("http");
+// lazily inside the desktop-only branch instead, and describe just the part of
+// Node's http module we use, so this compiles without Node's type definitions.
+interface LoopbackRequest {
+  url?: string;
+}
+interface LoopbackResponse {
+  writeHead(status: number, headers?: Record<string, string>): LoopbackResponse;
+  end(body?: string): void;
+}
+interface LoopbackServer {
+  listen(port: number, host: string, onListening: () => void): void;
+  close(): void;
+  on(event: "error", listener: (e: Error) => void): void;
+}
+interface NodeHttp {
+  createServer(handler: (req: LoopbackRequest, res: LoopbackResponse) => void): LoopbackServer;
+}
 declare const require: (mod: string) => unknown;
 
 const LOOPBACK_HOST = "127.0.0.1";
