@@ -18,6 +18,9 @@ your own Google Cloud OAuth client.
 - 🔐 **Your own OAuth client.** Nothing goes through the plugin author
 - 🧩 **Conflict copies.** Editing the same note on two devices keeps both versions
 - 🪦 **Deletes stay deleted**, even on a device that joins later
+- ✅ **Review before the first sync.** See every upload, download and delete
+  before anything is written, with a warning if the vault name doesn't match
+  your other devices
 - 🛑 **Safety stop.** A sync that would delete most of a vault is refused
 - ⏱️ **Auto-sync every 60 s** plus a manual sync button, with live progress
 - 👀 **Show files on Drive.** Browse what's stored, since Drive's own UI can't
@@ -101,7 +104,10 @@ minutes, once. Every device and vault can then reuse it.
 2. **Sign in with Google.** Because the app is yours and unverified, Google
    shows *"Google hasn't verified this app"*: choose **Advanced → Go to
    (your app name)** → **Continue**.
-3. Press 🔄 in the ribbon (or click NSync in the status bar) to sync.
+3. Right after sign-in, NSync shows a **first-sync review**: what will be
+   uploaded, downloaded and deleted. Check it, then press **Start sync**.
+   Nothing is written before that. After that, sync with 🔄 in the ribbon or by
+   clicking NSync in the status bar.
 
 On a phone, **Sign in** opens a small window. Tap **Open Google sign-in**.
 After you allow access, Safari/Chrome sends you back to Obsidian.

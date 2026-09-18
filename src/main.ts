@@ -19,6 +19,8 @@ import { isValidNamespace } from "./sync/namespace";
 import { summarizeRemote } from "./sync/remoteSummary";
 import { RemoteFilesModal } from "./ui/remoteFilesModal";
 import { SignInLinkModal } from "./ui/signInLinkModal";
+import { FirstSyncModal } from "./ui/firstSyncModal";
+import type { FirstSyncInfo } from "./sync/firstSync";
 
 declare const require: (mod: string) => any;
 
@@ -51,6 +53,8 @@ export default class NSyncPlugin extends Plugin {
   private timer: number | null = null;
   /** Last auto-sync error shown, so a failing 60s timer notifies once, not every minute. */
   private lastAutoError: string | null = null;
+  /** The auto-sync "first sync is waiting for review" notice was already shown. */
+  private firstSyncNotified = false;
 
   async onload(): Promise<void> {
     await this.loadSettings();
@@ -141,8 +145,17 @@ export default class NSyncPlugin extends Plugin {
       return;
     }
 
-    const notice = manual ? new Notice("NSync: starting…", 0) : null;
+    let notice = manual ? new Notice("NSync: starting…", 0) : null;
     let lastPaint = 0;
+    // First sync of this vault here: manual shows the review modal; the 60s
+    // timer never writes on its own and just flags that a review is waiting.
+    const confirmFirst = async (info: FirstSyncInfo): Promise<boolean> => {
+      if (!manual) return false;
+      notice?.hide();
+      const ok = await new FirstSyncModal(this.app, info, this.auth.email).ask();
+      if (ok) notice = new Notice("NSync: syncing…", 0);
+      return ok;
+    };
     const onProgress = (p: SyncProgress) => {
       this.status.set("syncing", progressText(p), `NSync: ${progressText(p)}`);
       // Scanning can report thousands of files; repaint the notice at most ~10x/s.
@@ -154,18 +167,30 @@ export default class NSyncPlugin extends Plugin {
     };
 
     try {
-      const result = await this.engine.sync(onProgress);
-      if (!result) {
+      const outcome = await this.engine.sync(onProgress, confirmFirst);
+      if (outcome.kind === "busy") {
         notice?.hide();
         return;
       }
-      const summary = summaryText(result);
+      if (outcome.kind === "cancelled") {
+        notice?.hide();
+        this.status.set("attention", "review first sync", "NSync: this vault's first sync needs your OK. Click to review.");
+        if (manual) {
+          new Notice("NSync: first sync cancelled. Nothing was changed.");
+        } else if (!this.firstSyncNotified) {
+          new Notice("NSync: ready for this vault's first sync. Press sync (🔄) to review and start.");
+          this.firstSyncNotified = true;
+        }
+        return;
+      }
+      const summary = summaryText(outcome.result);
       const time = new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
       this.status.set("ok", time, `NSync: last sync ${time}, ${summary}. Click to sync now.`);
       this.lastAutoError = null;
-      if (notice) {
-        notice.setMessage(`NSync: ${summary}`);
-        window.setTimeout(() => notice.hide(), 4000);
+      const done = notice;
+      if (done) {
+        done.setMessage(`NSync: ${summary}`);
+        window.setTimeout(() => done.hide(), 4000);
       }
     } catch (e) {
       const msg = (e as Error).message;
@@ -285,6 +310,9 @@ export default class NSyncPlugin extends Plugin {
     new Notice(this.auth.email ? `NSync: signed in as ${this.auth.email}` : "NSync: signed in.");
     this.showIdleStatus();
     this.refreshSettingTab();
+    // Go straight to the first sync; if this vault never synced here, the
+    // review modal opens before anything is written.
+    void this.runSync(true);
   }
 
   private async refreshAccountEmail(): Promise<void> {

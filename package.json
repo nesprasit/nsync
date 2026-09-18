@@ -1,6 +1,6 @@
 {
   "name": "nsync",
-  "version": "0.5.0",
+  "version": "0.5.1",
   "description": "NSync — sync an Obsidian vault across devices via Google Drive appDataFolder.",
   "main": "main.js",
   "type": "module",

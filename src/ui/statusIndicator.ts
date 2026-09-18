@@ -3,12 +3,13 @@ import { setIcon, setTooltip } from "obsidian";
 // Status bar item: a cloud icon whose shape/colour tracks the sync state, plus
 // a short label. Desktop only in practice (Obsidian mobile has no status bar).
 
-export type SyncStatus = "idle" | "syncing" | "ok" | "error" | "signed-out";
+export type SyncStatus = "idle" | "syncing" | "ok" | "attention" | "error" | "signed-out";
 
 const ICON: Record<SyncStatus, string> = {
   idle: "cloud",
   syncing: "refresh-cw",
   ok: "cloud",
+  attention: "alert-circle", // e.g. first sync waiting for review
   error: "cloud-off",
   "signed-out": "cloud-off",
 };
@@ -21,6 +22,7 @@ export const STATUS_CSS = `
 .nsync-status[data-state="ok"] .nsync-status-icon { color: var(--color-green); }
 .nsync-status[data-state="syncing"] .nsync-status-icon { color: var(--interactive-accent); }
 .nsync-status[data-state="syncing"] .nsync-status-icon svg { animation: nsync-spin 1s linear infinite; }
+.nsync-status[data-state="attention"] { color: var(--text-warning); }
 .nsync-status[data-state="error"] { color: var(--text-error); }
 .nsync-status[data-state="signed-out"] { color: var(--text-faint); }
 @keyframes nsync-spin { to { transform: rotate(360deg); } }

@@ -1,7 +1,7 @@
 {
   "id": "nsync",
   "name": "NSync",
-  "version": "0.5.0",
+  "version": "0.5.1",
   "minAppVersion": "1.5.0",
   "description": "Sync your vault across desktop and mobile through your own Google Drive (appDataFolder).",
   "author": "nesprasit",

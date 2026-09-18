@@ -110,8 +110,15 @@ Tombstones still drive the *local* deletion on other devices.
 On a new device, **merge** local and remote: pull what's missing, and on
 collisions apply the conflict-copy rule. An empty local vault just pulls
 everything down. The first run has no index yet, so it hashes the whole vault
-once (a slow but one-time pass). Asking the user to confirm before that first
-write was intended but is not built yet (see open questions).
+once (a slow but one-time pass).
+
+Nothing is written until the user **reviews and confirms** the first sync: a
+summary of uploads, downloads, files on both sides, and local deletes, plus a
+warning when the vault's namespace is empty on Drive but other namespaces exist
+(the usual sign of a mismatched vault name). The 60-second auto-sync never
+performs a first sync on its own; it only flags that a review is waiting.
+Files that exist on both sides with identical content are **matched**, not
+turned into conflict copies.
 
 ### Attachment size limit
 Mobile-aware: desktop syncs all files; mobile skips files above ~50MB and shows
@@ -134,7 +141,6 @@ a GitHub release for now.
 
 ## Open questions
 
-- Confirm-before-first-sync, so a new user can't be surprised by the first write.
 - Whether to sync `.obsidian/` config (and which files to exclude).
 - Submitting to the Obsidian community directory (review against the plugin
   guidelines; releases must carry `main.js` + `manifest.json`).
