@@ -6,6 +6,8 @@ import { DriveClient } from "./drive/driveClient";
 import { refresh, type TokenSet } from "./auth/oauth";
 import { AuthManager, MOBILE_CALLBACK_ACTION } from "./auth/authManager";
 import { isValidNamespace } from "./sync/namespace";
+import { summarizeRemote } from "./sync/remoteSummary";
+import { RemoteFilesModal } from "./ui/remoteFilesModal";
 
 declare const require: (mod: string) => any;
 
@@ -51,6 +53,11 @@ export default class NSyncPlugin extends Plugin {
       name: "Sync now",
       callback: () => this.runSync(),
     });
+    this.addCommand({
+      id: "nsync-show-remote",
+      name: "Show files on Drive",
+      callback: () => this.showRemoteFiles(),
+    });
 
     // Mobile OAuth callback: obsidian://nsync-auth?code=...&state=...
     this.registerObsidianProtocolHandler(MOBILE_CALLBACK_ACTION, (params) => {
@@ -89,6 +96,19 @@ export default class NSyncPlugin extends Plugin {
       console.error("NSync failed", e);
       new Notice(`NSync failed: ${(e as Error).message}`);
     }
+  }
+
+  /** Read-only browser for the hidden appDataFolder (the Drive UI can't show it). */
+  showRemoteFiles(): void {
+    if (!this.isAuthed()) {
+      new Notice("NSync: sign in first.");
+      return;
+    }
+    new RemoteFilesModal(
+      this.app,
+      async () => summarizeRemote(await this.drive.list()),
+      this.store.namespace,
+    ).open();
   }
 
   // --- namespace ----------------------------------------------------------

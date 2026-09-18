@@ -42,6 +42,16 @@ export class NSyncSettingTab extends PluginSettingTab {
           .onClick(() => this.plugin.toggleAuth()),
       );
 
+    new Setting(containerEl)
+      .setName("Files on Drive")
+      .setDesc("See what NSync has stored in its hidden Google Drive folder, per vault.")
+      .addButton((b) =>
+        b
+          .setButtonText("Show files")
+          .setDisabled(!this.plugin.isAuthed())
+          .onClick(() => this.plugin.showRemoteFiles()),
+      );
+
     let pendingNs = this.plugin.namespace;
     new Setting(containerEl)
       .setName("Vault name on Drive")
