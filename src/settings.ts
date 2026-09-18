@@ -21,7 +21,9 @@ export const DEFAULT_SETTINGS: NSyncSettings = {
   autoSyncSeconds: 60,
   autoSyncEnabled: true,
   trashRetentionDays: 30,
-  mobileRedirectBridge: "",
+  // Personal build: default to this project's own GitHub Pages bridge so mobile
+  // sign-in needs no typing. Still editable in settings.
+  mobileRedirectBridge: "https://nesprasit.github.io/nsync/callback.html",
 };
 
 export class NSyncSettingTab extends PluginSettingTab {
