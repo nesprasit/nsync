@@ -35,7 +35,7 @@ export function summarizePlan(actions: SyncAction[]): PlanSummary {
     else if (a.kind === "delete-local") s.deleteLocal.push(a.path);
     else if (a.kind === "delete-remote") s.deleteRemote.push(a.path);
   }
-  for (const list of Object.values(s)) list.sort();
+  for (const list of [s.upload, s.download, s.both, s.deleteLocal, s.deleteRemote]) list.sort();
   return s;
 }
 
@@ -48,6 +48,6 @@ export function namespaceHint(info: FirstSyncInfo): string | null {
   const names = info.otherNamespaces.map((n) => `"${n}"`).join(", ");
   return (
     `Drive has nothing under "${info.namespace}" yet, but it does have ${names}. ` +
-    `If this is the same vault as on another device, cancel and set "Vault name on Drive" to match.`
+    `If this is the same vault as on another device, cancel and set "Vault name on Google Drive" to match.`
   );
 }

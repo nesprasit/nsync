@@ -25,6 +25,27 @@ export interface ChangesPage {
   nextPageToken?: string;
 }
 
+// Shapes of the Drive API responses we read (only the fields we request).
+interface ErrorBody { error?: { message?: string } }
+interface AboutBody { user?: { emailAddress?: string; displayName?: string } }
+interface ListBody { files?: DriveFile[]; nextPageToken?: string }
+interface StartTokenBody { startPageToken: string }
+interface ChangesBody {
+  changes?: { file?: DriveFile }[];
+  newStartPageToken?: string;
+  nextPageToken?: string;
+}
+interface IdBody { id: string }
+
+/** requestUrl's .json getter throws on a non-JSON body; this returns undefined instead. */
+function jsonOrUndefined(res: RequestUrlResponse): unknown {
+  try {
+    return res.json as unknown;
+  } catch {
+    return undefined;
+  }
+}
+
 export class DriveClient {
   constructor(private getAccessToken: () => Promise<string>) {}
 
@@ -39,21 +60,27 @@ export class DriveClient {
   private async req(opts: RequestUrlParam): Promise<RequestUrlResponse> {
     const res = await requestUrl({ throw: false, ...opts });
     if (res.status < 200 || res.status >= 300) {
-      const msg = res.json?.error?.message ?? res.text ?? "unknown error";
+      const body = jsonOrUndefined(res) as ErrorBody | undefined;
+      const msg = body?.error?.message ?? res.text ?? "unknown error";
       throw new Error(`Drive ${res.status}: ${msg}`);
     }
     return res;
+  }
+
+  /** A successful request's JSON body, typed as the fields we asked for. */
+  private async json<T>(opts: RequestUrlParam): Promise<T> {
+    return (await this.req(opts)).json as T;
   }
 
   // --- reads --------------------------------------------------------------
 
   /** The signed-in Google account (works with the drive.appdata scope). */
   async about(): Promise<{ email?: string; name?: string }> {
-    const res = await this.req({
+    const body = await this.json<AboutBody>({
       url: "https://www.googleapis.com/drive/v3/about?fields=user(emailAddress,displayName)",
       headers: await this.authHeaders(),
     });
-    return { email: res.json.user?.emailAddress, name: res.json.user?.displayName };
+    return { email: body.user?.emailAddress, name: body.user?.displayName };
   }
 
   /** List all non-trashed files in appDataFolder (paginated). */
@@ -68,9 +95,9 @@ export class DriveClient {
         q: "trashed = false",
       });
       if (pageToken) p.set("pageToken", pageToken);
-      const res = await this.req({ url: `${DRIVE_FILES}?${p}`, headers: await this.authHeaders() });
-      files.push(...(res.json.files ?? []));
-      pageToken = res.json.nextPageToken;
+      const body = await this.json<ListBody>({ url: `${DRIVE_FILES}?${p.toString()}`, headers: await this.authHeaders() });
+      files.push(...(body.files ?? []));
+      pageToken = body.nextPageToken;
     } while (pageToken);
     return files;
   }
@@ -85,11 +112,11 @@ export class DriveClient {
 
   /** Token to start watching changes from "now" (CONTEXT: 60s auto-sync). */
   async startPageToken(): Promise<string> {
-    const res = await this.req({
+    const body = await this.json<StartTokenBody>({
       url: `${DRIVE_CHANGES}/startPageToken?fields=startPageToken`,
       headers: await this.authHeaders(),
     });
-    return res.json.startPageToken;
+    return body.startPageToken;
   }
 
   /** One page of changes since `pageToken` (call repeatedly until no nextPageToken). */
@@ -101,14 +128,14 @@ export class DriveClient {
       pageSize: "1000",
       includeRemoved: "true",
     });
-    const res = await this.req({ url: `${DRIVE_CHANGES}?${p}`, headers: await this.authHeaders() });
-    const files: DriveFile[] = (res.json.changes ?? [])
-      .map((c: { file?: DriveFile }) => c.file)
-      .filter((f: DriveFile | undefined): f is DriveFile => !!f);
+    const body = await this.json<ChangesBody>({ url: `${DRIVE_CHANGES}?${p.toString()}`, headers: await this.authHeaders() });
+    const files = (body.changes ?? [])
+      .map((c) => c.file)
+      .filter((f): f is DriveFile => !!f);
     return {
       files,
-      newStartPageToken: res.json.newStartPageToken,
-      nextPageToken: res.json.nextPageToken,
+      newStartPageToken: body.newStartPageToken,
+      nextPageToken: body.nextPageToken,
     };
   }
 
@@ -119,24 +146,23 @@ export class DriveClient {
    * the request bodies simple and avoid hand-assembling multipart/related.
    */
   async create(name: string, data: ArrayBuffer): Promise<DriveFile> {
-    const meta = await this.req({
+    const meta = await this.json<IdBody>({
       url: `${DRIVE_FILES}?fields=id`,
       method: "POST",
       headers: await this.authHeaders({ "Content-Type": "application/json" }),
       body: JSON.stringify({ name, parents: ["appDataFolder"] }),
     });
-    return this.update(meta.json.id, data);
+    return this.update(meta.id, data);
   }
 
   /** Replace a file's content; returns the new headRevisionId. */
   async update(fileId: string, data: ArrayBuffer): Promise<DriveFile> {
-    const res = await this.req({
+    return this.json<DriveFile>({
       url: `${DRIVE_UPLOAD}/${fileId}?uploadType=media&fields=${FILE_FIELDS}`,
       method: "PATCH",
       headers: await this.authHeaders({ "Content-Type": "application/octet-stream" }),
       body: data,
     });
-    return res.json;
   }
 
   /** Rename a file in place (same id, content and revision are untouched). */

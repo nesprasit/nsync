@@ -14,19 +14,7 @@ const ICON: Record<SyncStatus, string> = {
   "signed-out": "cloud-off",
 };
 
-// Injected at load so installs stay two files (main.js + manifest.json).
-export const STATUS_CSS = `
-.nsync-status { display: inline-flex; align-items: center; gap: 4px; }
-.nsync-status-icon { display: inline-flex; }
-.nsync-status-icon svg { width: var(--icon-xs, 14px); height: var(--icon-xs, 14px); }
-.nsync-status[data-state="ok"] .nsync-status-icon { color: var(--color-green); }
-.nsync-status[data-state="syncing"] .nsync-status-icon { color: var(--interactive-accent); }
-.nsync-status[data-state="syncing"] .nsync-status-icon svg { animation: nsync-spin 1s linear infinite; }
-.nsync-status[data-state="attention"] { color: var(--text-warning); }
-.nsync-status[data-state="error"] { color: var(--text-error); }
-.nsync-status[data-state="signed-out"] { color: var(--text-faint); }
-@keyframes nsync-spin { to { transform: rotate(360deg); } }
-`;
+// Styling lives in styles.css (.nsync-status*), which Obsidian loads itself.
 
 export class StatusIndicator {
   private readonly icon: HTMLElement;

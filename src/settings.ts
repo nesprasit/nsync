@@ -62,8 +62,8 @@ export class NSyncSettingTab extends PluginSettingTab {
       );
 
     new Setting(containerEl)
-      .setName("Files on Drive")
-      .setDesc("See what NSync has stored in its hidden Google Drive folder, per vault.")
+      .setName("Files on Google Drive")
+      .setDesc("See what this plugin has stored in its hidden Google Drive folder, per vault.")
       .addButton((b) =>
         b
           .setButtonText("Show files")
@@ -73,7 +73,7 @@ export class NSyncSettingTab extends PluginSettingTab {
 
     let pendingNs = this.plugin.namespace;
     new Setting(containerEl)
-      .setName("Vault name on Drive")
+      .setName("Vault name on Google Drive")
       .setDesc(
         "Devices that use the same name sync the same vault. Keep it identical " +
           "on every device. Changing it starts a fresh merge with that name.",
@@ -137,11 +137,11 @@ export class NSyncSettingTab extends PluginSettingTab {
 
   /** "Bring your own credentials": the user's Google Cloud OAuth client. */
   private renderOAuthClient(containerEl: HTMLElement): void {
-    new Setting(containerEl).setName("Google OAuth client").setHeading();
+    new Setting(containerEl).setName("Your Google sign-in app").setHeading();
 
     const intro = containerEl.createEl("p", { cls: "setting-item-description" });
     intro.appendText(
-      "NSync signs in with your own Google Cloud OAuth client, so your data never " +
+      "This plugin signs in with your own Google Cloud OAuth client, so your data never " +
         "goes through anyone else's app. ",
     );
     intro.createEl("a", { text: "Setup guide (about 10 minutes)", href: SETUP_GUIDE });
@@ -175,7 +175,7 @@ export class NSyncSettingTab extends PluginSettingTab {
       .addText((t) => {
         t.inputEl.type = "password";
         secretInput = t.inputEl;
-        t.setPlaceholder("GOCSPX-…")
+        t.setPlaceholder("Paste your client secret")
           .setValue(secret)
           .onChange((v) => {
             secret = v.trim();
@@ -192,7 +192,7 @@ export class NSyncSettingTab extends PluginSettingTab {
       );
 
     const uris = containerEl.createDiv({ cls: "setting-item-description" });
-    uris.createEl("p", { text: "Add both of these as Authorised redirect URIs on your OAuth client:" });
+    uris.createEl("p", { text: "Add both addresses below as authorized redirects on the client you created:" });
     const list = uris.createEl("ul");
     list.createEl("li").createEl("code", { text: LOOPBACK_REDIRECT });
     list.createEl("li").createEl("code", { text: this.plugin.settings.mobileRedirectBridge });

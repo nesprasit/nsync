@@ -1,5 +1,6 @@
-import { Notice, Platform, Plugin } from "obsidian";
-import { STATUS_CSS, StatusIndicator } from "./ui/statusIndicator";
+import { Platform, Plugin } from "obsidian";
+import { StatusIndicator } from "./ui/statusIndicator";
+import { notify, updateNotice, PLUGIN_NAME } from "./ui/notify";
 import { progressText, summaryText, type SyncProgress } from "./sync/progress";
 import { DEFAULT_SETTINGS, NSyncSettingTab, type NSyncSettings } from "./settings";
 import { IndexStore } from "./sync/indexStore";
@@ -8,13 +9,6 @@ import { DriveClient } from "./drive/driveClient";
 import { refresh, type TokenSet } from "./auth/oauth";
 import { AuthManager, MOBILE_CALLBACK_ACTION, type PendingAuth } from "./auth/authManager";
 import { clientProblem, normalizeClient, type OAuthClient } from "./auth/client";
-
-/**
- * Credentials are remembered per device (window.localStorage is shared by all
- * vaults in the app) so each vault on this device doesn't need them re-entered.
- * Never synced: NSync doesn't sync .obsidian, and localStorage isn't a file.
- */
-const DEVICE_CLIENT_KEY = "nsync:oauth-client";
 import { isValidNamespace } from "./sync/namespace";
 import { summarizeRemote } from "./sync/remoteSummary";
 import { RemoteFilesModal } from "./ui/remoteFilesModal";
@@ -22,15 +16,21 @@ import { SignInLinkModal } from "./ui/signInLinkModal";
 import { FirstSyncModal } from "./ui/firstSyncModal";
 import type { FirstSyncInfo } from "./sync/firstSync";
 
-declare const require: (mod: string) => any;
+/**
+ * Credentials are remembered per device (window.localStorage is shared by all
+ * vaults in the app) so each vault on this device doesn't need them re-entered.
+ * Never synced: NSync doesn't sync .obsidian, and localStorage isn't a file.
+ */
+const DEVICE_CLIENT_KEY = "nsync:oauth-client";
 
-/** Open a URL in the system browser on both desktop (Electron) and mobile. */
+declare const require: (mod: string) => unknown;
+interface ElectronShell {
+  shell: { openExternal(url: string): Promise<void> };
+}
+
+/** Open a URL in the system browser on desktop (Electron). */
 function openExternal(url: string): void {
-  if (Platform.isDesktopApp) {
-    require("electron").shell.openExternal(url);
-  } else {
-    window.open(url, "_blank");
-  }
+  void (require("electron") as ElectronShell).shell.openExternal(url);
 }
 
 // data.json layout (all per-device, excluded from sync):
@@ -39,6 +39,17 @@ interface PersistedAuth {
   token?: TokenSet;
   /** Signed-in Google account, shown in settings. */
   email?: string;
+}
+
+function errorMessage(e: unknown): string {
+  return e instanceof Error ? e.message : String(e);
+}
+
+/** The parts of data.json this file reads (IndexStore owns the rest). */
+interface PersistedData {
+  settings?: Partial<NSyncSettings>;
+  auth?: PersistedAuth;
+  pendingAuth?: PendingAuth | null;
 }
 
 export default class NSyncPlugin extends Plugin {
@@ -67,43 +78,42 @@ export default class NSyncPlugin extends Plugin {
       (url) => (Platform.isDesktopApp ? openExternal(url) : new SignInLinkModal(this.app, url).open()),
       () => this.settings.mobileRedirectBridge,
       {
-        load: async () => ((await this.loadData())?.pendingAuth as PendingAuth | undefined) ?? null,
-        save: async (p) => this.saveData({ ...(await this.loadData()), pendingAuth: p }),
+        load: async () => (await this.readData()).pendingAuth ?? null,
+        save: async (p) => this.saveData({ ...(await this.readData()), pendingAuth: p }),
       },
       () => this.oauthClient(),
     );
 
     // Ribbon button, command and status bar = the manual "Sync" trigger (CONTEXT Q6).
-    this.addRibbonIcon("refresh-cw", "NSync: sync vault", () => this.runSync(true));
+    this.addRibbonIcon("refresh-cw", "Sync with Google Drive", () => void this.runSync(true));
     this.addCommand({
-      id: "nsync-now",
+      id: "sync-now",
       name: "Sync now",
-      callback: () => this.runSync(true),
+      callback: () => void this.runSync(true),
     });
 
     // Desktop only in practice: Obsidian mobile has no status bar.
-    const style = document.head.createEl("style", { text: STATUS_CSS });
-    this.register(() => style.remove());
     const statusEl = this.addStatusBarItem();
-    statusEl.onClickEvent(() => this.runSync(true));
+    statusEl.onClickEvent(() => void this.runSync(true));
     this.status = new StatusIndicator(statusEl);
     this.showIdleStatus();
     this.addCommand({
-      id: "nsync-show-remote",
-      name: "Show files on Drive",
+      id: "show-files-on-drive",
+      name: "Show files on Google Drive",
       callback: () => this.showRemoteFiles(),
     });
 
     // Mobile OAuth callback: obsidian://nsync-auth?code=...&state=...
     // The pending sign-in is read from data.json, so this works even if iOS
     // reloaded Obsidian while the user was in Safari.
-    this.registerObsidianProtocolHandler(MOBILE_CALLBACK_ACTION, async (params) => {
-      try {
-        await this.completeSignIn(await this.authManager.completeMobile(params));
-      } catch (e) {
-        console.error("NSync sign-in failed", e);
-        new Notice(`NSync sign-in failed: ${(e as Error).message}`);
-      }
+    this.registerObsidianProtocolHandler(MOBILE_CALLBACK_ACTION, (params) => {
+      this.authManager.completeMobile(params).then(
+        (token) => this.completeSignIn(token),
+        (e: unknown) => {
+          console.error("NSync sign-in failed", e);
+          notify(`sign-in failed: ${errorMessage(e)}`);
+        },
+      );
     });
 
     this.settingTab = new NSyncSettingTab(this.app, this);
@@ -125,7 +135,7 @@ export default class NSyncPlugin extends Plugin {
     this.timer = null;
     if (!this.settings.autoSyncEnabled) return;
     this.timer = window.setInterval(
-      () => this.runSync(false),
+      () => void this.runSync(false),
       this.settings.autoSyncSeconds * 1000,
     );
     this.registerInterval(this.timer);
@@ -137,15 +147,15 @@ export default class NSyncPlugin extends Plugin {
    */
   private async runSync(manual: boolean): Promise<void> {
     if (!this.isAuthed()) {
-      if (manual) new Notice("NSync: not signed in.");
+      if (manual) notify("not signed in.");
       return;
     }
     if (this.engine.isRunning) {
-      if (manual) new Notice("NSync: a sync is already running.");
+      if (manual) notify("a sync is already running.");
       return;
     }
 
-    let notice = manual ? new Notice("NSync: starting…", 0) : null;
+    let notice = manual ? notify("starting…", 0) : null;
     let lastPaint = 0;
     // First sync of this vault here: manual shows the review modal; the 60s
     // timer never writes on its own and just flags that a review is waiting.
@@ -153,15 +163,15 @@ export default class NSyncPlugin extends Plugin {
       if (!manual) return false;
       notice?.hide();
       const ok = await new FirstSyncModal(this.app, info, this.auth.email).ask();
-      if (ok) notice = new Notice("NSync: syncing…", 0);
+      if (ok) notice = notify("syncing…", 0);
       return ok;
     };
     const onProgress = (p: SyncProgress) => {
-      this.status.set("syncing", progressText(p), `NSync: ${progressText(p)}`);
+      this.status.set("syncing", progressText(p), `${PLUGIN_NAME}: ${progressText(p)}`);
       // Scanning can report thousands of files; repaint the notice at most ~10x/s.
       const now = Date.now();
       if (notice && (p.phase !== "scanning" || now - lastPaint > 100)) {
-        notice.setMessage(`NSync: ${progressText(p, true)}`);
+        updateNotice(notice, `${progressText(p, true)}`);
         lastPaint = now;
       }
     };
@@ -174,30 +184,30 @@ export default class NSyncPlugin extends Plugin {
       }
       if (outcome.kind === "cancelled") {
         notice?.hide();
-        this.status.set("attention", "review first sync", "NSync: this vault's first sync needs your OK. Click to review.");
+        this.status.set("attention", "review first sync", `${PLUGIN_NAME}: this vault's first sync needs your OK. Click to review.`);
         if (manual) {
-          new Notice("NSync: first sync cancelled. Nothing was changed.");
+          notify("first sync cancelled. Nothing was changed.");
         } else if (!this.firstSyncNotified) {
-          new Notice("NSync: ready for this vault's first sync. Press sync (🔄) to review and start.");
+          notify("ready for this vault's first sync. Press sync (🔄) to review and start.");
           this.firstSyncNotified = true;
         }
         return;
       }
       const summary = summaryText(outcome.result);
       const time = new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
-      this.status.set("ok", time, `NSync: last sync ${time}, ${summary}. Click to sync now.`);
+      this.status.set("ok", time, `${PLUGIN_NAME}: last sync ${time}, ${summary}. Click to sync now.`);
       this.lastAutoError = null;
       const done = notice;
       if (done) {
-        done.setMessage(`NSync: ${summary}`);
+        updateNotice(done, `${summary}`);
         window.setTimeout(() => done.hide(), 4000);
       }
     } catch (e) {
-      const msg = (e as Error).message;
+      const msg = errorMessage(e);
       console.error("NSync failed", e);
       notice?.hide();
-      this.status.set("error", "sync failed", `NSync: ${msg} Click to retry.`);
-      if (manual || msg !== this.lastAutoError) new Notice(`NSync failed: ${msg}`);
+      this.status.set("error", "sync failed", `${PLUGIN_NAME}: ${msg} Click to retry.`);
+      if (manual || msg !== this.lastAutoError) notify(`sync failed: ${msg}`);
       if (!manual) this.lastAutoError = msg;
     }
   }
@@ -205,16 +215,16 @@ export default class NSyncPlugin extends Plugin {
   /** Resting state before the first sync of the session, or after sign-in/out. */
   private showIdleStatus(): void {
     if (this.isAuthed()) {
-      this.status.set("idle", "NSync", "NSync: click to sync now");
+      this.status.set("idle", "NSync", `${PLUGIN_NAME}: click to sync now`);
     } else {
-      this.status.set("signed-out", "signed out", "NSync: not signed in. Open settings to sign in.");
+      this.status.set("signed-out", "signed out", `${PLUGIN_NAME}: not signed in. Open settings to sign in.`);
     }
   }
 
   /** Read-only browser for the hidden appDataFolder (the Drive UI can't show it). */
   showRemoteFiles(): void {
     if (!this.isAuthed()) {
-      new Notice("NSync: sign in first.");
+      notify("sign in first.");
       return;
     }
     new RemoteFilesModal(
@@ -232,12 +242,12 @@ export default class NSyncPlugin extends Plugin {
 
   async changeNamespace(ns: string): Promise<void> {
     if (!isValidNamespace(ns)) {
-      new Notice("NSync: vault name can't be empty or contain \"/\".");
+      notify("vault name can't be empty or contain \"/\".");
       return;
     }
     if (ns === this.store.namespace) return;
     await this.store.setNamespace(ns);
-    new Notice(`NSync: now syncing as "${ns}". Next sync merges with it.`);
+    notify(`now syncing as "${ns}". Next sync merges with it.`);
   }
 
   // --- auth ---------------------------------------------------------------
@@ -255,7 +265,7 @@ export default class NSyncPlugin extends Plugin {
     const next = normalizeClient(c);
     const problem = clientProblem(next);
     if (problem) {
-      new Notice(`NSync: ${problem}`);
+      notify(`${problem}`);
       return;
     }
     const changed = next.clientId !== this.settings.clientId;
@@ -272,9 +282,9 @@ export default class NSyncPlugin extends Plugin {
       this.auth = {};
       await this.persistAuth();
       this.showIdleStatus();
-      new Notice("NSync: OAuth client changed. Sign in again.");
+      notify("OAuth client changed. Sign in again.");
     } else {
-      new Notice("NSync: OAuth client saved.");
+      notify("OAuth client saved.");
     }
   }
 
@@ -287,19 +297,19 @@ export default class NSyncPlugin extends Plugin {
     if (this.isAuthed()) {
       this.auth = {};
       await this.persistAuth();
-      new Notice("NSync: signed out.");
+      notify("signed out.");
       this.showIdleStatus();
       this.refreshSettingTab();
       return;
     }
     try {
-      new Notice("NSync: opening Google sign-in…");
+      notify("opening Google sign-in…");
       const token = await this.authManager.signIn();
       // Desktop returns the token here; mobile finishes in the protocol handler.
       if (token) await this.completeSignIn(token);
     } catch (e) {
       console.error("NSync sign-in failed", e);
-      new Notice(`NSync sign-in failed: ${(e as Error).message}`);
+      notify(`sign-in failed: ${errorMessage(e)}`);
     }
   }
 
@@ -307,7 +317,7 @@ export default class NSyncPlugin extends Plugin {
     this.auth = { token };
     await this.persistAuth();
     await this.refreshAccountEmail();
-    new Notice(this.auth.email ? `NSync: signed in as ${this.auth.email}` : "NSync: signed in.");
+    notify(this.auth.email ? `signed in as ${this.auth.email}` : "signed in.");
     this.showIdleStatus();
     this.refreshSettingTab();
     // Go straight to the first sync; if this vault never synced here, the
@@ -334,7 +344,7 @@ export default class NSyncPlugin extends Plugin {
   }
 
   private async persistAuth(): Promise<void> {
-    await this.saveData({ ...(await this.loadData()), auth: this.auth });
+    await this.saveData({ ...(await this.readData()), auth: this.auth });
   }
 
   /** Returns a valid access token, refreshing if near expiry. */
@@ -354,18 +364,20 @@ export default class NSyncPlugin extends Plugin {
 
   // --- persistence --------------------------------------------------------
 
+  /** data.json, typed for the fields this file owns. */
+  private async readData(): Promise<PersistedData> {
+    return ((await this.loadData()) as PersistedData | null) ?? {};
+  }
+
   async loadSettings(): Promise<void> {
-    const data = ((await this.loadData()) ?? {}) as {
-      settings?: Partial<NSyncSettings>;
-      auth?: PersistedAuth;
-    };
+    const data = await this.readData();
     this.settings = { ...DEFAULT_SETTINGS, ...data.settings };
     this.auth = data.auth ?? {};
     // New vault on a device that already has credentials: reuse them.
     if (!this.settings.clientId && !this.settings.clientSecret) {
       try {
         const saved = window.localStorage.getItem(DEVICE_CLIENT_KEY);
-        if (saved) Object.assign(this.settings, normalizeClient(JSON.parse(saved)));
+        if (saved) Object.assign(this.settings, normalizeClient(JSON.parse(saved) as Partial<OAuthClient>));
       } catch {
         // ignore: the user can enter them in settings
       }
@@ -373,6 +385,6 @@ export default class NSyncPlugin extends Plugin {
   }
 
   async saveSettings(): Promise<void> {
-    await this.saveData({ ...(await this.loadData()), settings: this.settings });
+    await this.saveData({ ...(await this.readData()), settings: this.settings });
   }
 }

@@ -69,7 +69,7 @@ export class TombstoneStore {
   async flush(): Promise<void> {
     if (!this.dirty) return;
     const data = new TextEncoder().encode(JSON.stringify([...this.map.values()]))
-      .buffer as ArrayBuffer;
+      .buffer;
     if (this.remoteFileId) {
       await this.drive.update(this.remoteFileId, data);
     } else {

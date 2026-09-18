@@ -1,4 +1,5 @@
-import { type App, Modal, Notice } from "obsidian";
+import { type App, Modal } from "obsidian";
+import { notify, PLUGIN_NAME } from "./notify";
 
 // Mobile sign-in launcher. iOS only opens the system browser from a direct user
 // tap; by the time the async PKCE setup finishes, a programmatic window.open()
@@ -13,34 +14,34 @@ export class SignInLinkModal extends Modal {
 
   onOpen(): void {
     const { contentEl } = this;
-    this.titleEl.setText("NSync: sign in with Google");
+    this.titleEl.setText(`${PLUGIN_NAME}: sign in with Google`);
     contentEl.createEl("p", {
       text:
         "Tap the button to open Google sign-in in your browser. After you allow " +
         "access you'll be sent back to Obsidian automatically.",
     });
 
-    const open = contentEl.createEl("button", { text: "Open Google sign-in", cls: "mod-cta" });
-    open.style.width = "100%";
+    const open = contentEl.createEl("button", {
+      text: "Open Google sign-in",
+      cls: ["mod-cta", "nsync-full-width"],
+    });
     open.addEventListener("click", () => {
       window.open(this.url, "_blank"); // synchronous, inside the tap
       this.close();
     });
 
-    const alt = contentEl.createEl("p", { cls: "setting-item-description" });
-    alt.appendText("If nothing opens, ");
-    alt.createEl("a", { text: "tap this link", href: this.url });
-    alt.appendText(" or copy it into Safari/Chrome:");
+    contentEl.createEl("p", {
+      cls: "setting-item-description",
+      text: "If nothing opens, tap the link below or copy it into your browser.",
+    });
+    contentEl.createEl("p").createEl("a", { text: "Google sign-in link", href: this.url });
 
-    const copy = contentEl.createEl("button", { text: "Copy link" });
-    copy.style.width = "100%";
-    copy.addEventListener("click", async () => {
-      try {
-        await navigator.clipboard.writeText(this.url);
-        new Notice("NSync: sign-in link copied. Paste it into your browser.");
-      } catch {
-        new Notice("NSync: couldn't copy. Use the link above instead.");
-      }
+    const copy = contentEl.createEl("button", { text: "Copy link", cls: "nsync-full-width" });
+    copy.addEventListener("click", () => {
+      navigator.clipboard.writeText(this.url).then(
+        () => notify("sign-in link copied. Paste it into your browser."),
+        () => notify("couldn't copy. Use the link above instead."),
+      );
     });
   }
 

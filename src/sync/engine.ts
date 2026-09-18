@@ -34,13 +34,11 @@ export type SyncOutcome =
 
 const MOBILE_MAX_BYTES = 50 * 1024 * 1024; // CONTEXT Q18: mobile skips > ~50MB
 
-/** Files/paths that must never be synced (CONTEXT Q9 + token safety). */
-const EXCLUDES = [
-  ".obsidian/workspace.json",
-  ".obsidian/workspace-mobile.json",
-  ".obsidian/cache",
-  ".trash/",
-];
+/**
+ * Paths that must never be synced. The config folder (vault.configDir, usually
+ * .obsidian) needs no entry: Obsidian's vault file list never includes it.
+ */
+const EXCLUDES = [".trash/"];
 
 export function isExcluded(path: string): boolean {
   return EXCLUDES.some((e) => (e.endsWith("/") ? path.startsWith(e) : path === e));

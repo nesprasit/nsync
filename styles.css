@@ -1,0 +1,25 @@
+/* NSync. Loaded automatically by Obsidian from the plugin folder. */
+
+/* Status bar item: cloud icon + short label */
+.nsync-status { display: inline-flex; align-items: center; gap: 4px; }
+.nsync-status-icon { display: inline-flex; }
+.nsync-status-icon svg { width: var(--icon-xs, 14px); height: var(--icon-xs, 14px); }
+.nsync-status[data-state="ok"] .nsync-status-icon { color: var(--color-green); }
+.nsync-status[data-state="syncing"] .nsync-status-icon { color: var(--interactive-accent); }
+.nsync-status[data-state="syncing"] .nsync-status-icon svg { animation: nsync-spin 1s linear infinite; }
+.nsync-status[data-state="attention"] { color: var(--text-warning); }
+.nsync-status[data-state="error"] { color: var(--text-error); }
+.nsync-status[data-state="signed-out"] { color: var(--text-faint); }
+@keyframes nsync-spin { to { transform: rotate(360deg); } }
+
+/* Modals */
+.nsync-full-width { width: 100%; }
+.nsync-warning { color: var(--text-warning); }
+.nsync-danger { color: var(--text-error); }
+.nsync-file-list { font-size: var(--font-ui-smaller); }
+
+/* "Show files on Google Drive" table */
+.nsync-file-table { width: 100%; font-size: var(--font-ui-smaller); }
+.nsync-file-table .nsync-path { word-break: break-all; }
+.nsync-file-table .nsync-size { text-align: right; white-space: nowrap; }
+.nsync-file-table .nsync-date { white-space: nowrap; padding-left: 1em; }

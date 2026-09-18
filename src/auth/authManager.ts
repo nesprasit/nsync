@@ -7,10 +7,11 @@ import {
 } from "./oauth";
 import { clientProblem, type OAuthClient } from "./client";
 
-// Node/Electron are available on desktop only. Never import them statically —
-// the bundle would `require("http")` at load and crash Obsidian mobile. We
-// require lazily inside desktop-only branches instead.
-declare const require: (mod: string) => any;
+// Node is available on desktop only. Never import it statically: the bundle
+// would `require("http")` at load and crash Obsidian mobile. We require it
+// lazily inside the desktop-only branch instead (the type import is erased).
+type NodeHttp = typeof import("http");
+declare const require: (mod: string) => unknown;
 
 const LOOPBACK_HOST = "127.0.0.1";
 const LOOPBACK_PORT = 42813;
@@ -83,34 +84,51 @@ export class AuthManager {
 
   private signInDesktop(verifier: string, challenge: string, state: string): Promise<TokenSet> {
     return new Promise<TokenSet>((resolve, reject) => {
-      const http = require("http");
-      const server = http.createServer(async (req: any, res: any) => {
+      // Desktop only (signIn routes mobile elsewhere): a one-shot local server is
+      // the OAuth loopback redirect Google supports for installed apps.
+      const http = Platform.isDesktop ? (require("http") as NodeHttp) : null;
+      if (!http) {
+        reject(new Error("Desktop sign-in isn't available on this device."));
+        return;
+      }
+
+      const finish = (req: { url?: string }): void => {
+        const url = new URL(req.url ?? "/", LOOPBACK_REDIRECT);
+        const code = url.searchParams.get("code");
+        const err = url.searchParams.get("error");
+        if (err) return reject(new Error(`Google returned error: ${err}`));
+        if (!code) return reject(new Error("No authorization code returned"));
+        if (url.searchParams.get("state") !== state) {
+          return reject(new Error("State mismatch (possible CSRF)"));
+        }
+        exchangeCode(this.client(), code, verifier, LOOPBACK_REDIRECT).then(resolve, reject);
+      };
+
+      const server = http.createServer((req, res) => {
+        if (new URL(req.url ?? "/", LOOPBACK_REDIRECT).pathname !== "/") {
+          res.writeHead(404).end();
+          return;
+        }
+        res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" });
+        res.end("<!doctype html><meta charset=utf-8><body style='font-family:sans-serif'>Signed in. You can close this tab and return to Obsidian.</body>");
+        server.close();
         try {
-          const url = new URL(req.url, LOOPBACK_REDIRECT);
-          if (url.pathname !== "/") {
-            res.writeHead(404).end();
-            return;
-          }
-          res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" });
-          res.end("<!doctype html><meta charset=utf-8><body style='font-family:sans-serif'>Signed in. You can close this tab and return to Obsidian.</body>");
-          server.close();
-          const code = url.searchParams.get("code");
-          const gotState = url.searchParams.get("state");
-          const err = url.searchParams.get("error");
-          if (err) return reject(new Error(`Google returned error: ${err}`));
-          if (!code) return reject(new Error("No authorization code returned"));
-          if (gotState !== state) return reject(new Error("State mismatch (possible CSRF)"));
-          resolve(await exchangeCode(this.client(), code, verifier, LOOPBACK_REDIRECT));
+          finish(req);
         } catch (e) {
-          reject(e as Error);
+          reject(toError(e));
         }
       });
-      server.on("error", (e: Error) => reject(e));
+      server.on("error", (e) => reject(e));
       server.listen(LOOPBACK_PORT, LOOPBACK_HOST, () => {
-        this.openExternal(buildAuthUrl(this.client(), challenge, LOOPBACK_REDIRECT, state));
+        try {
+          this.openExternal(buildAuthUrl(this.client(), challenge, LOOPBACK_REDIRECT, state));
+        } catch (e) {
+          server.close();
+          reject(toError(e));
+        }
       });
-      setTimeout(() => {
-        try { server.close(); } catch { /* already closed */ }
+      window.setTimeout(() => {
+        server.close();
         reject(new Error("Sign-in timed out"));
       }, 180_000);
     });
@@ -139,4 +157,8 @@ export class AuthManager {
     if (params.state !== p.state) throw new Error("State mismatch (possible CSRF)");
     return exchangeCode(this.client(), params.code, p.verifier, p.redirect);
   }
+}
+
+function toError(e: unknown): Error {
+  return e instanceof Error ? e : new Error(String(e));
 }

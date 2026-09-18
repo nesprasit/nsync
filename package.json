@@ -1,6 +1,6 @@
 {
   "name": "nsync",
-  "version": "0.5.1",
+  "version": "0.5.2",
   "description": "NSync — sync an Obsidian vault across devices via Google Drive appDataFolder.",
   "main": "main.js",
   "type": "module",
@@ -8,7 +8,8 @@
     "dev": "node esbuild.config.mjs",
     "build": "tsc -noEmit -skipLibCheck && node esbuild.config.mjs production",
     "typecheck": "tsc -noEmit -skipLibCheck",
-    "test": "node --import tsx --test test/*.test.ts"
+    "test": "node --import tsx --test test/*.test.ts",
+    "lint": "eslint src package.json"
   },
   "keywords": [
     "obsidian",
@@ -17,12 +18,16 @@
   ],
   "license": "MIT",
   "devDependencies": {
+    "@eslint/js": "^9.39.5",
+    "@eslint/json": "^0.14.0",
     "@types/node": "^22.0.0",
-    "builtin-modules": "^4.0.0",
     "esbuild": "^0.24.0",
+    "eslint": "^9.39.5",
+    "eslint-plugin-obsidianmd": "^0.4.2",
     "obsidian": "latest",
     "tslib": "^2.7.0",
     "tsx": "^4.23.13",
-    "typescript": "^5.6.0"
+    "typescript": "^5.6.0",
+    "typescript-eslint": "^8.70.0"
   }
 }

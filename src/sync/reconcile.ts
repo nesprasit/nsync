@@ -68,15 +68,15 @@ export function planSync(
     }
 
     if (lc && rc) {
-      actions.push({ kind: "conflict", path, remoteFileId: R!.remoteFileId!, rev: R!.rev, base: true });
+      actions.push({ kind: "conflict", path, remoteFileId: R.remoteFileId!, rev: R.rev, base: true });
     } else if (lc && !rc && R) {
       actions.push({ kind: "upload", path, remoteFileId: B.remoteFileId });
     } else if (lc && rd) {
       actions.push({ kind: "upload", path });
     } else if (!lc && rc && L) {
-      actions.push({ kind: "download", path, remoteFileId: R!.remoteFileId!, rev: R!.rev, size: R!.size });
+      actions.push({ kind: "download", path, remoteFileId: R.remoteFileId!, rev: R.rev, size: R.size });
     } else if (ld && rc) {
-      actions.push({ kind: "download", path, remoteFileId: R!.remoteFileId!, rev: R!.rev, size: R!.size });
+      actions.push({ kind: "download", path, remoteFileId: R.remoteFileId!, rev: R.rev, size: R.size });
     } else if (ld && !rc && R) {
       actions.push({ kind: "delete-remote", path, remoteFileId: R.remoteFileId! });
     } else if (!lc && rd && L) {

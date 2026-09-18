@@ -1,5 +1,6 @@
 import { type App, Modal, Setting } from "obsidian";
 import { formatBytes, type RemoteEntry, type RemoteSummary } from "../sync/remoteSummary";
+import { PLUGIN_NAME } from "./notify";
 
 // Read-only view of what NSync has stored in the hidden appDataFolder, grouped
 // by vault namespace. The Drive web UI can't show this folder, so this is the
@@ -17,7 +18,7 @@ export class RemoteFilesModal extends Modal {
   }
 
   async onOpen(): Promise<void> {
-    this.titleEl.setText("NSync: files on Google Drive");
+    this.titleEl.setText(`${PLUGIN_NAME}: files on Google Drive`);
     const status = this.contentEl.createEl("p", { text: "Loading…" });
     try {
       const summary = await this.load();
@@ -85,20 +86,15 @@ export class RemoteFilesModal extends Modal {
     details.createEl("summary", { text: filter ? `${title} (${shown.length} match)` : title });
     if (note) details.createEl("p", { text: note, cls: "setting-item-description" });
 
-    const table = details.createEl("table");
-    table.style.width = "100%";
-    table.style.fontSize = "var(--font-ui-smaller)";
+    const table = details.createEl("table", { cls: "nsync-file-table" });
     for (const f of shown.slice(0, MAX_ROWS)) {
       const tr = table.createEl("tr");
-      tr.createEl("td", { text: f.path }).style.wordBreak = "break-all";
-      const size = tr.createEl("td", { text: formatBytes(f.size) });
-      size.style.textAlign = "right";
-      size.style.whiteSpace = "nowrap";
-      const when = tr.createEl("td", {
+      tr.createEl("td", { text: f.path, cls: "nsync-path" });
+      tr.createEl("td", { text: formatBytes(f.size), cls: "nsync-size" });
+      tr.createEl("td", {
         text: f.modifiedTime ? new Date(f.modifiedTime).toLocaleString() : "",
+        cls: "nsync-date",
       });
-      when.style.whiteSpace = "nowrap";
-      when.style.paddingLeft = "1em";
     }
     if (shown.length > MAX_ROWS) {
       details.createEl("p", {

@@ -23,7 +23,7 @@ your own Google Cloud OAuth client.
   your other devices
 - 🛑 **Safety stop.** A sync that would delete most of a vault is refused
 - ⏱️ **Auto-sync every 60 s** plus a manual sync button, with live progress
-- 👀 **Show files on Drive.** Browse what's stored, since Drive's own UI can't
+- 👀 **Show files on Google Drive.** Browse what's stored, since Drive's own UI can't
 - 📵 **Mobile-aware.** Skips files over 50 MB on phones
 
 ---
@@ -90,14 +90,14 @@ minutes, once. Every device and vault can then reuse it.
 
 ### 2. Install the plugin
 
-- **Manual install:** download `main.js` and `manifest.json` from the
+- **Manual install:** download `main.js`, `manifest.json` and `styles.css` from the
   [latest release](https://github.com/nesprasit/nsync/releases) into
   `<your vault>/.obsidian/plugins/nsync/`.
 - Then **Settings → Community plugins** → enable **NSync**.
 
 ### 3. Connect
 
-1. **Settings → NSync → Google OAuth client:** paste your Client ID and Client
+1. **Settings → NSync → Your Google sign-in app:** paste your Client ID and Client
    secret, or paste the whole downloaded JSON into the Client ID field. Then
    **Save**. The credentials are remembered on this device for your other
    vaults.
@@ -116,7 +116,7 @@ After you allow access, Safari/Chrome sends you back to Obsidian.
 
 - Install NSync in the same vault on the other device, enter the same OAuth
   client, and sign in with the **same Google account**.
-- Devices pair up by **Vault name on Drive** (settings). It defaults to the vault
+- Devices pair up by **Vault name on Google Drive** (settings). It defaults to the vault
   folder name. Make it identical on every device for the same vault.
 - Each vault signs in separately, but one Google account can hold many vaults.
 
@@ -128,7 +128,7 @@ After you allow access, Safari/Chrome sends you back to Obsidian.
 |---|---|
 | Sync now | ribbon 🔄, command *NSync: Sync now*, or click the status bar |
 | Status (desktop) | status bar cloud: green = synced, spinning = syncing, red = failed |
-| Browse Drive | command *NSync: Show files on Drive* |
+| Browse Drive | command *NSync: Show files on Google Drive* |
 | Auto-sync | on by default, every 60 s while Obsidian is open (settings) |
 
 On mobile, Obsidian only runs plugins while the app is open, so syncing happens
@@ -163,6 +163,7 @@ npm install
 npm run dev        # esbuild watch
 npm run build      # typecheck + production bundle (main.js)
 npm test           # unit tests (node --test + tsx)
+npm run lint       # the same ESLint rules Obsidian's plugin review runs
 ```
 
 ```

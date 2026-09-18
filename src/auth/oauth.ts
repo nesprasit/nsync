@@ -85,8 +85,17 @@ export async function refresh(client: OAuthClient, refreshToken: string): Promis
   return t;
 }
 
+/** Google's token endpoint response (success or error fields). */
+interface TokenBody {
+  access_token?: string;
+  refresh_token?: string;
+  expires_in?: number;
+  error?: string;
+  error_description?: string;
+}
+
 /** POST to the token endpoint, surfacing Google's error text (e.g. invalid_client). */
-async function postToken(params: Record<string, string>): Promise<any> {
+async function postToken(params: Record<string, string>): Promise<TokenBody> {
   const res = await requestUrl({
     url: TOKEN_ENDPOINT,
     method: "POST",
@@ -94,19 +103,27 @@ async function postToken(params: Record<string, string>): Promise<any> {
     body: new URLSearchParams(params).toString(),
     throw: false,
   });
+  let body: TokenBody = {};
+  try {
+    body = res.json as TokenBody;
+  } catch {
+    // non-JSON body; fall through with the status code
+  }
   if (res.status < 200 || res.status >= 300) {
-    const j = res.json ?? {};
-    const detail = j.error_description ? `${j.error}: ${j.error_description}` : j.error ?? res.status;
+    const detail = body.error_description
+      ? `${body.error ?? "error"}: ${body.error_description}`
+      : body.error ?? String(res.status);
     throw new Error(`Google token request failed (${detail})`);
   }
-  return res.json;
+  return body;
 }
 
-function toTokenSet(json: any): TokenSet {
+function toTokenSet(body: TokenBody): TokenSet {
+  if (!body.access_token) throw new Error("Google token response had no access token");
   return {
-    accessToken: json.access_token,
-    refreshToken: json.refresh_token,
-    expiresAt: Date.now() + (json.expires_in ?? 3600) * 1000,
+    accessToken: body.access_token,
+    refreshToken: body.refresh_token ?? "",
+    expiresAt: Date.now() + (body.expires_in ?? 3600) * 1000,
   };
 }
 

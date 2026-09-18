@@ -32,14 +32,22 @@ export function clientProblem(c: Partial<OAuthClient>): string | null {
 export function parseClientJson(input: string): OAuthClient | null {
   const s = input.trim();
   if (!s.startsWith("{")) return null;
+  let parsed: unknown;
   try {
-    const j = JSON.parse(s);
-    const inner = j.web ?? j.installed ?? j;
-    if (typeof inner.client_id === "string" && typeof inner.client_secret === "string") {
-      return normalizeClient({ clientId: inner.client_id, clientSecret: inner.client_secret });
-    }
+    parsed = JSON.parse(s);
   } catch {
-    // not JSON; treat as a plain Client ID
+    return null; // not JSON; treat as a plain Client ID
+  }
+  if (!isObject(parsed)) return null;
+  const inner = isObject(parsed.web) ? parsed.web : isObject(parsed.installed) ? parsed.installed : parsed;
+  const id = inner.client_id;
+  const secret = inner.client_secret;
+  if (typeof id === "string" && typeof secret === "string") {
+    return normalizeClient({ clientId: id, clientSecret: secret });
   }
   return null;
+}
+
+function isObject(v: unknown): v is Record<string, unknown> {
+  return typeof v === "object" && v !== null;
 }

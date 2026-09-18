@@ -48,7 +48,7 @@ const info = (over: Partial<FirstSyncInfo>): FirstSyncInfo => ({
 test("namespaceHint flags an empty namespace next to other vaults", () => {
   const hint = namespaceHint(info({ otherNamespaces: ["Gold2Go", "Asia Plus"] }));
   assert.match(hint ?? "", /"Gold2Go", "Asia Plus"/);
-  assert.match(hint ?? "", /Vault name on Drive/);
+  assert.match(hint ?? "", /Vault name on Google Drive/);
 });
 
 test("namespaceHint stays quiet when nothing looks off", () => {

@@ -1,5 +1,6 @@
 import { type App, Modal, Setting } from "obsidian";
 import { namespaceHint, type FirstSyncInfo } from "../sync/firstSync";
+import { PLUGIN_NAME } from "./notify";
 
 // Shown before the first sync of a vault on this device. Nothing is written
 // until the user presses "Start sync"; closing the modal counts as cancel.
@@ -27,7 +28,7 @@ export class FirstSyncModal extends Modal {
 
   onOpen(): void {
     const { contentEl, info } = this;
-    this.titleEl.setText(`NSync: first sync of "${info.namespace}"`);
+    this.titleEl.setText(`${PLUGIN_NAME}: first sync of "${info.namespace}"`);
 
     contentEl.createEl("p", {
       text: "This vault hasn't synced on this device before. Nothing has been changed yet. Review what will happen:",
@@ -36,12 +37,12 @@ export class FirstSyncModal extends Modal {
       cls: "setting-item-description",
       text:
         `${this.email ? `Google account: ${this.email} · ` : ""}` +
-        `Vault name on Drive: ${info.namespace} · ` +
+        `Vault name on Google Drive: ${info.namespace} · ` +
         `${info.localCount} files here, ${info.remoteCount} on Drive`,
     });
 
     const hint = namespaceHint(info);
-    if (hint) this.callout(hint, "var(--text-warning)");
+    if (hint) contentEl.createEl("p", { text: hint, cls: "nsync-warning" });
 
     const { plan } = info;
     this.group(`↑ Upload to Drive: ${plan.upload.length}`, plan.upload);
@@ -53,7 +54,7 @@ export class FirstSyncModal extends Modal {
     this.group(
       `🗑 Delete on this device: ${plan.deleteLocal.length} (deleted on another device)`,
       plan.deleteLocal,
-      plan.deleteLocal.length > 0 ? "var(--text-error)" : undefined,
+      plan.deleteLocal.length > 0 ? "nsync-danger" : undefined,
     );
     this.group(`🗑 Move to Drive trash: ${plan.deleteRemote.length}`, plan.deleteRemote);
 
@@ -81,18 +82,11 @@ export class FirstSyncModal extends Modal {
     }
   }
 
-  private callout(text: string, color: string): void {
-    const p = this.contentEl.createEl("p", { text });
-    p.style.color = color;
-  }
-
-  private group(title: string, paths: string[], color?: string): void {
+  private group(title: string, paths: string[], cls?: string): void {
     if (paths.length === 0) return;
     const details = this.contentEl.createEl("details");
-    const summary = details.createEl("summary", { text: title });
-    if (color) summary.style.color = color;
-    const list = details.createEl("ul");
-    list.style.fontSize = "var(--font-ui-smaller)";
+    details.createEl("summary", { text: title, cls });
+    const list = details.createEl("ul", { cls: "nsync-file-list" });
     for (const p of paths.slice(0, MAX_LISTED)) list.createEl("li", { text: p });
     if (paths.length > MAX_LISTED) {
       details.createEl("p", {
