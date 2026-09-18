@@ -1,0 +1,10 @@
+node_modules/
+main.js
+*.js.map
+.DS_Store
+
+# Never commit local auth state or the per-device sync index
+data.json
+
+# Never commit real OAuth credentials (use credentials.example.ts as template)
+src/auth/credentials.ts

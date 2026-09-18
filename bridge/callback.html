@@ -1,0 +1,34 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>NSync — returning to Obsidian</title>
+  <style>
+    body { font-family: system-ui, sans-serif; margin: 2rem; line-height: 1.5; }
+    code { background: #eee; padding: 0 .3em; border-radius: 3px; }
+  </style>
+</head>
+<body>
+  <h1>Returning to Obsidian…</h1>
+  <p id="msg">If nothing happens, tap the button below.</p>
+  <p><a id="link" href="#"><button>Open Obsidian</button></a></p>
+
+  <script>
+    // Static bridge: Google redirects here (https, which it accepts), and we
+    // forward the same query params to obsidian://nsync-auth (a custom scheme,
+    // which Google would NOT accept directly). No server logic, no secrets —
+    // safe to host on GitHub Pages / Cloudflare Pages.
+    //
+    // Register THIS page's URL as an Authorized redirect URI in the Google
+    // Cloud OAuth client, and paste it into the plugin's mobile settings.
+    (function () {
+      var qs = window.location.search || "";
+      var target = "obsidian://nsync-auth" + qs;
+      document.getElementById("link").setAttribute("href", target);
+      // Auto-redirect.
+      window.location.replace(target);
+    })();
+  </script>
+</body>
+</html>
