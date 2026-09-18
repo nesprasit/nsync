@@ -5,6 +5,7 @@ import { SyncEngine } from "./sync/engine";
 import { DriveClient } from "./drive/driveClient";
 import { refresh, type TokenSet } from "./auth/oauth";
 import { AuthManager, MOBILE_CALLBACK_ACTION } from "./auth/authManager";
+import { isValidNamespace } from "./sync/namespace";
 
 declare const require: (mod: string) => any;
 
@@ -34,7 +35,7 @@ export default class NSyncPlugin extends Plugin {
 
   async onload(): Promise<void> {
     await this.loadSettings();
-    this.store = await IndexStore.load(this);
+    this.store = await IndexStore.load(this, this.app.vault.getName());
 
     this.drive = new DriveClient(() => this.accessToken());
     this.engine = new SyncEngine(this.app, this.drive, this.store);
@@ -88,6 +89,22 @@ export default class NSyncPlugin extends Plugin {
       console.error("NSync failed", e);
       new Notice(`NSync failed: ${(e as Error).message}`);
     }
+  }
+
+  // --- namespace ----------------------------------------------------------
+
+  get namespace(): string {
+    return this.store.namespace;
+  }
+
+  async changeNamespace(ns: string): Promise<void> {
+    if (!isValidNamespace(ns)) {
+      new Notice("NSync: vault name can't be empty or contain \"/\".");
+      return;
+    }
+    if (ns === this.store.namespace) return;
+    await this.store.setNamespace(ns);
+    new Notice(`NSync: now syncing as "${ns}". Next sync merges with it.`);
   }
 
   // --- auth ---------------------------------------------------------------

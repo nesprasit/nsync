@@ -19,6 +19,20 @@ import type { FileState, SyncAction, SyncIndex, Tombstone } from "./types";
 //   deleted both sides         -> forget (drop stale index)
 //   nothing changed            -> noop
 
+/**
+ * Safety valve: refuse a pass that would delete most of the vault locally.
+ * That pattern means something upstream is wrong (wrong namespace, a remote
+ * listing that came back empty) far more often than a genuine mass delete.
+ * Returns a reason to abort, or null when the plan looks sane.
+ */
+export function massDeleteReason(actions: SyncAction[], indexSize: number): string | null {
+  const n = actions.filter((a) => a.kind === "delete-local").length;
+  if (n >= 5 && n > indexSize * 0.5) {
+    return `Safety stop: this sync would delete ${n} of ${indexSize} local files. Nothing was changed.`;
+  }
+  return null;
+}
+
 export function planSync(
   idx: SyncIndex,
   local: Map<string, FileState>,

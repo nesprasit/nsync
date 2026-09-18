@@ -42,6 +42,25 @@ export class NSyncSettingTab extends PluginSettingTab {
           .onClick(() => this.plugin.toggleAuth()),
       );
 
+    let pendingNs = this.plugin.namespace;
+    new Setting(containerEl)
+      .setName("Vault name on Drive")
+      .setDesc(
+        "Devices that use the same name sync the same vault. Keep it identical " +
+          "on every device. Changing it starts a fresh merge with that name.",
+      )
+      .addText((t) =>
+        t.setValue(pendingNs).onChange((v) => {
+          pendingNs = v.trim();
+        }),
+      )
+      .addButton((b) =>
+        b.setButtonText("Apply").onClick(async () => {
+          await this.plugin.changeNamespace(pendingNs);
+          this.display();
+        }),
+      );
+
     new Setting(containerEl)
       .setName("Auto-sync")
       .setDesc("Sync automatically while Obsidian is open.")

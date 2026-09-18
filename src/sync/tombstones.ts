@@ -1,23 +1,28 @@
 import type { DriveClient, DriveFile } from "../drive/driveClient";
 import type { Tombstone } from "./types";
 
-// Tombstones are stored in a single shared JSON file inside appDataFolder, so a
-// brand-new device (which has no local index) still learns that a file was
-// deleted elsewhere and does not resurrect it. The local index alone handles
-// deletes between devices that share a base; tombstones cover the no-base case.
-
-export const TOMBSTONE_FILE = "__nsync_tombstones__.json";
+// Tombstones are stored in one JSON file per vault namespace inside
+// appDataFolder, so a brand-new device (which has no local index) still learns
+// that a file was deleted elsewhere and does not resurrect it. The local index
+// alone handles deletes between devices that share a base; tombstones cover the
+// no-base case.
 
 export class TombstoneStore {
   private map = new Map<string, Tombstone>();
   private remoteFileId: string | null = null;
+  private fileName = "";
   private dirty = false;
 
   constructor(private readonly drive: DriveClient) {}
 
-  /** Load from the remote file (call once per sync, before reconcile). */
-  async load(remoteFiles: DriveFile[]): Promise<void> {
-    const f = remoteFiles.find((x) => x.name === TOMBSTONE_FILE);
+  /**
+   * Load from the remote file (call once per sync, before reconcile).
+   * @param fileName this vault's tombstone file name (see namespace.ts)
+   */
+  async load(remoteFiles: DriveFile[], fileName: string): Promise<void> {
+    this.fileName = fileName;
+    this.dirty = false;
+    const f = remoteFiles.find((x) => x.name === fileName);
     this.remoteFileId = f?.id ?? null;
     this.map.clear();
     if (!f) return;
@@ -68,7 +73,7 @@ export class TombstoneStore {
     if (this.remoteFileId) {
       await this.drive.update(this.remoteFileId, data);
     } else {
-      const f = await this.drive.create(TOMBSTONE_FILE, data);
+      const f = await this.drive.create(this.fileName, data);
       this.remoteFileId = f.id;
     }
     this.dirty = false;

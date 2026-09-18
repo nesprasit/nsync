@@ -1,9 +1,16 @@
 import { type App, Platform } from "obsidian";
-import type { DriveClient } from "../drive/driveClient";
+import type { DriveClient, DriveFile } from "../drive/driveClient";
 import type { IndexStore } from "./indexStore";
 import type { FileState, SyncAction } from "./types";
-import { TombstoneStore, TOMBSTONE_FILE } from "./tombstones";
-import { planSync } from "./reconcile";
+import { TombstoneStore } from "./tombstones";
+import { massDeleteReason, planSync } from "./reconcile";
+import {
+  LEGACY_TOMBSTONE_FILE,
+  isLegacyName,
+  pathFromRemote,
+  remoteName,
+  tombstoneName,
+} from "./namespace";
 import { sha1 } from "./hash";
 
 // Three-state reconciliation: local (L) vs remote (R) vs last-synced base (the
@@ -44,19 +51,46 @@ export class SyncEngine {
     if (this.running) return; // sync lock: never run two passes at once
     this.running = true;
     try {
-      const remoteFiles = await this.drive.list();
-      await this.tombstones.load(remoteFiles);
+      const ns = this.store.namespace;
+      let remoteFiles = await this.drive.list();
+      if (this.store.needsLegacyMigration) {
+        await this.migrateLegacy(remoteFiles, ns);
+        remoteFiles = await this.drive.list();
+      }
+      await this.tombstones.load(remoteFiles, tombstoneName(ns));
 
       const local = await this.scanLocal();
-      const remote = this.mapRemote(remoteFiles);
+      const remote = this.mapRemote(remoteFiles, ns);
       const actions = this.reconcile(local, remote);
-      await this.apply(actions, remote);
+      const stop = massDeleteReason(actions, Object.keys(this.store.index).length);
+      if (stop) throw new Error(stop);
+      await this.apply(actions, ns);
 
       await this.tombstones.flush();
       await this.store.persist();
     } finally {
       this.running = false;
     }
+  }
+
+  /**
+   * v0.1.0 stored files un-prefixed. Move the ones this vault owns (their ids
+   * are in our index) into our namespace by renaming in place: ids, content and
+   * revisions stay the same, so the index remains valid and nothing looks
+   * deleted. Legacy files we don't own are left alone.
+   */
+  private async migrateLegacy(remoteFiles: DriveFile[], ns: string): Promise<void> {
+    const owned = new Set(Object.values(this.store.index).map((e) => e.remoteFileId));
+    for (const f of remoteFiles) {
+      if (!isLegacyName(f.name)) continue;
+      if (f.name === LEGACY_TOMBSTONE_FILE) {
+        await this.drive.rename(f.id, tombstoneName(ns));
+      } else if (owned.has(f.id)) {
+        await this.drive.rename(f.id, remoteName(ns, f.name));
+      }
+    }
+    this.store.markMigrated();
+    await this.store.persist();
   }
 
   // --- scanning -----------------------------------------------------------
@@ -87,12 +121,14 @@ export class SyncEngine {
     return out;
   }
 
-  private mapRemote(files: import("../drive/driveClient").DriveFile[]): Map<string, FileState> {
+  /** Only this vault's files, keyed by vault path (namespace prefix stripped). */
+  private mapRemote(files: DriveFile[], ns: string): Map<string, FileState> {
     const out = new Map<string, FileState>();
     for (const df of files) {
-      if (df.name === TOMBSTONE_FILE) continue; // engine metadata, not a vault file
-      out.set(df.name, {
-        path: df.name,
+      const path = pathFromRemote(ns, df.name);
+      if (path === null) continue; // another vault, metadata, or legacy
+      out.set(path, {
+        path,
         exists: true,
         remoteFileId: df.id,
         rev: df.headRevisionId,
@@ -110,8 +146,7 @@ export class SyncEngine {
 
   // --- execution ----------------------------------------------------------
 
-  private async apply(actions: SyncAction[], remote: Map<string, FileState>): Promise<void> {
-    void remote;
+  private async apply(actions: SyncAction[], ns: string): Promise<void> {
     const idx = this.store.index;
     const now = Date.now();
 
@@ -129,7 +164,7 @@ export class SyncEngine {
           const data = await this.readLocal(a.path);
           const file = a.remoteFileId
             ? await this.drive.update(a.remoteFileId, data)
-            : await this.drive.create(a.path, data);
+            : await this.drive.create(remoteName(ns, a.path), data);
           idx[a.path] = {
             path: a.path,
             hash: await sha1(data),
@@ -171,7 +206,7 @@ export class SyncEngine {
         }
 
         case "conflict":
-          await this.resolveConflict(a, now);
+          await this.resolveConflict(a, now, ns);
           break;
       }
     }
@@ -186,6 +221,7 @@ export class SyncEngine {
   private async resolveConflict(
     a: Extract<SyncAction, { kind: "conflict" }>,
     now: number,
+    ns: string,
   ): Promise<void> {
     const idx = this.store.index;
     const localData = await this.readLocal(a.path);
@@ -196,7 +232,7 @@ export class SyncEngine {
       // remote wins the canonical name; local becomes the conflict copy
       await this.writeLocal(copyPath, localData);
       await this.writeLocal(a.path, remoteData);
-      const copyFile = await this.drive.create(copyPath, localData);
+      const copyFile = await this.drive.create(remoteName(ns, copyPath), localData);
       idx[a.path] = {
         path: a.path, hash: await sha1(remoteData), mtime: now,
         remoteFileId: a.remoteFileId, lastSyncRev: a.rev ?? "",
@@ -209,7 +245,7 @@ export class SyncEngine {
       // first-run collision: local stays canonical; remote saved aside
       await this.writeLocal(copyPath, remoteData);
       const mainFile = await this.drive.update(a.remoteFileId, localData);
-      const copyFile = await this.drive.create(copyPath, remoteData);
+      const copyFile = await this.drive.create(remoteName(ns, copyPath), remoteData);
       idx[a.path] = {
         path: a.path, hash: await sha1(localData), mtime: now,
         remoteFileId: a.remoteFileId, lastSyncRev: mainFile.headRevisionId ?? "",

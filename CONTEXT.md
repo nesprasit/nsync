@@ -41,9 +41,24 @@ files (`workspace.json`, `workspace-mobile.json`, caches). Attachment size limit
 to be decided.
 
 ### Account model
-One Google account = one vault stored in that account's `appDataFolder`. Every
-device signs in with the same account and sees the same vault. Single vault,
-single account for v1.
+One Google account can sync **many vaults**. Each vault lives in its own
+**namespace** inside that account's `appDataFolder`, so vaults never mix. Every
+device signs in with the same account; each vault on each device signs in
+separately.
+
+### Namespace
+The name that pairs the same vault across devices ("Vault name on Drive" in
+settings). Defaults to the vault's folder name the first time the plugin runs,
+then stays pinned even if the vault is renamed. Two devices sync the same vault
+only when their namespaces are identical. Changing a namespace starts a fresh
+merge with the new one: nothing local is deleted because files "vanished" from
+the old namespace.
+
+### Safety stop
+A sync pass that would delete more than half of the vault's tracked files
+locally (and at least 5) is aborted before touching anything. That pattern
+almost always means a wrong namespace or a bad remote listing, not a real mass
+delete.
 
 Two independent layers, often confused:
 - **Account (who logs in)**: always the end user's own Google account. Files land

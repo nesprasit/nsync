@@ -130,6 +130,16 @@ export class DriveClient {
     return res.json;
   }
 
+  /** Rename a file in place (same id, content and revision are untouched). */
+  async rename(fileId: string, name: string): Promise<void> {
+    await this.req({
+      url: `${DRIVE_FILES}/${fileId}?fields=id,name`,
+      method: "PATCH",
+      headers: await this.authHeaders({ "Content-Type": "application/json" }),
+      body: JSON.stringify({ name }),
+    });
+  }
+
   /** Soft delete: move to Drive trash (recoverable, auto-purged by Google). */
   async trash(fileId: string): Promise<void> {
     await this.setTrashed(fileId, true);

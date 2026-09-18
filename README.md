@@ -133,6 +133,9 @@ https กลาง 1 หน้าเพื่อ forward code กลับเข
 - **Sync**: กดไอคอน 🔄 บน ribbon หรือ command palette → *NSync: Sync now*
 - **Auto-sync**: เปิด/ปิด + ตั้ง interval ได้ใน settings (default 60 วิ)
 - **Mobile**: วาง Bridge URL ในช่อง settings (โผล่เฉพาะบนมือถือ) ก่อน sign in
+- **หลาย vault**: บัญชี Google เดียว sync ได้หลาย vault — แต่ละ vault แยกกันด้วย
+  **Vault name on Drive** (ค่าเริ่มต้น = ชื่อ vault) ต้องตั้งให้ **ตรงกันทุกเครื่อง**
+  จึงจะจับคู่เป็น vault เดียวกัน
 
 > 📱 บนมือถือ Obsidian รัน plugin เฉพาะตอนแอปเปิด — auto-sync จะทำงานตอนเปิดแอป
 > และตอนกดปุ่ม ไม่มี background sync จริง (ข้อจำกัดของ OS)

@@ -10,6 +10,10 @@ import type { SyncIndex } from "./types";
 export interface PersistedState {
   index: SyncIndex;
   deviceId: string;
+  /** Drive namespace for this vault. Pinned at first load; see namespace.ts. */
+  namespace: string;
+  /** True once any pre-namespace (legacy) remote files have been moved in. */
+  nsMigrated: boolean;
   // auth + settings are persisted here too; see settings.ts
 }
 
@@ -23,14 +27,21 @@ export class IndexStore {
     this.state = state;
   }
 
-  static async load(plugin: Plugin): Promise<IndexStore> {
+  /** @param defaultNamespace used only when this vault has no namespace yet (the vault name). */
+  static async load(plugin: Plugin, defaultNamespace: string): Promise<IndexStore> {
     const raw = ((await plugin.loadData()) ?? {}) as Partial<PersistedState>;
+    const index = raw.index ?? {};
     const state: PersistedState = {
-      index: raw.index ?? {},
+      index,
       deviceId: raw.deviceId ?? crypto.randomUUID(),
+      namespace: raw.namespace ?? defaultNamespace,
+      // A vault that never synced has nothing legacy to adopt.
+      nsMigrated: raw.nsMigrated ?? Object.keys(index).length === 0,
     };
     const store = new IndexStore(plugin, state);
-    if (!raw.deviceId) await store.persist();
+    if (!raw.deviceId || raw.namespace === undefined || raw.nsMigrated === undefined) {
+      await store.persist();
+    }
     return store;
   }
 
@@ -40,6 +51,30 @@ export class IndexStore {
 
   get deviceId(): string {
     return this.state.deviceId;
+  }
+
+  get namespace(): string {
+    return this.state.namespace;
+  }
+
+  get needsLegacyMigration(): boolean {
+    return !this.state.nsMigrated;
+  }
+
+  markMigrated(): void {
+    this.state.nsMigrated = true;
+  }
+
+  /**
+   * Point this vault at a different namespace. The index is cleared so the next
+   * sync is a first-run merge: nothing local can be deleted because of files
+   * that "vanished" from the old namespace.
+   */
+  async setNamespace(ns: string): Promise<void> {
+    this.state.namespace = ns;
+    this.state.index = {};
+    this.state.nsMigrated = true;
+    await this.persist();
   }
 
   async persist(): Promise<void> {
