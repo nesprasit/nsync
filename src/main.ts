@@ -8,6 +8,7 @@ import { AuthManager, MOBILE_CALLBACK_ACTION } from "./auth/authManager";
 import { isValidNamespace } from "./sync/namespace";
 import { summarizeRemote } from "./sync/remoteSummary";
 import { RemoteFilesModal } from "./ui/remoteFilesModal";
+import { SignInLinkModal } from "./ui/signInLinkModal";
 
 declare const require: (mod: string) => any;
 
@@ -42,7 +43,8 @@ export default class NSyncPlugin extends Plugin {
     this.drive = new DriveClient(() => this.accessToken());
     this.engine = new SyncEngine(this.app, this.drive, this.store);
     this.authManager = new AuthManager(
-      openExternal,
+      // Desktop can open the browser programmatically; mobile needs a direct tap.
+      (url) => (Platform.isDesktopApp ? openExternal(url) : new SignInLinkModal(this.app, url).open()),
       () => this.settings.mobileRedirectBridge,
     );
 
