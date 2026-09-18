@@ -1,4 +1,4 @@
-# NSync 0.6.0
+# NSync 0.6.1
 
 First public release. NSync syncs your Obsidian vaults across desktop and mobile
 through **your own Google Drive**, signing in with **your own Google Cloud OAuth
@@ -6,6 +6,9 @@ client**. No server, no third-party sync service, nothing passes through the
 plugin author.
 
 > ⚠️ Early software. **Back up your vault before the first sync.**
+
+## New in 0.6.1
+- Settings: *Choose from Google Drive* now sits on its own row under *Vault name on Google Drive* and *Apply*.
 
 ## New in 0.6.0
 - **Choose from Google Drive.** In settings, pick which vault on Drive this vault syncs with from a list (file count, size, last change) instead of typing its name. Picking one opens the first-sync review right away. Works on desktop and mobile.
