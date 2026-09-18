@@ -18,6 +18,8 @@ export interface VaultGroup {
   ns: string;
   files: RemoteEntry[];
   bytes: number;
+  /** Newest modifiedTime among the vault's files (ISO string), if any. */
+  lastModified?: string;
 }
 
 export interface RemoteSummary {
@@ -50,6 +52,10 @@ export function summarizeRemote(files: RemoteFileLike[]): RemoteSummary {
         if (!g) byNs.set(ns, (g = { ns, files: [], bytes: 0 }));
         g.files.push({ ...base, path: rest.slice(slash + 1) });
         g.bytes += size;
+        // ISO-8601 timestamps from Drive compare correctly as strings.
+        if (f.modifiedTime && (!g.lastModified || f.modifiedTime > g.lastModified)) {
+          g.lastModified = f.modifiedTime;
+        }
         continue;
       }
       legacy.push({ ...base, path: f.name }); // malformed; show rather than hide

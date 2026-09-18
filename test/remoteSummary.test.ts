@@ -16,6 +16,17 @@ test("groups files by vault namespace and strips the prefix", () => {
   assert.equal(s.totalBytes, 350);
 });
 
+test("tracks each vault's newest modification time", () => {
+  const s = summarizeRemote([
+    { name: "v/A/1.md", modifiedTime: "2026-09-01T10:00:00.000Z" },
+    { name: "v/A/2.md", modifiedTime: "2026-09-18T08:30:00.000Z" },
+    { name: "v/A/3.md" },
+    { name: "v/B/x.md" },
+  ]);
+  assert.equal(s.vaults.find((g) => g.ns === "A")?.lastModified, "2026-09-18T08:30:00.000Z");
+  assert.equal(s.vaults.find((g) => g.ns === "B")?.lastModified, undefined);
+});
+
 test("separates metadata and legacy files", () => {
   const s = summarizeRemote([
     { name: "m/Gold2Go/tombstones.json", size: "10" },

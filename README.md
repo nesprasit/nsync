@@ -149,7 +149,11 @@ After you allow access, Safari/Chrome sends you back to Obsidian.
   account**. Copying the Client ID and secret on your computer and pasting on
   the phone (e.g. Apple's Universal Clipboard) saves typing.
 - Devices pair up by **Vault name on Google Drive** (settings). It defaults to the vault
-  folder name. Make it identical on every device for the same vault.
+  folder name. Make it identical on every device for the same vault. On a new
+  device, the easiest way is **Choose from Google Drive**: it lists the vaults
+  already on Drive, and picking one starts the first-sync review, which
+  downloads its notes once you confirm. This works on phones too: create an
+  empty vault, install NSync, sign in, then choose the vault.
 - Each vault signs in separately, but one Google account can hold many vaults.
 
 ---

@@ -75,8 +75,9 @@ export class NSyncSettingTab extends PluginSettingTab {
     new Setting(containerEl)
       .setName("Vault name on Google Drive")
       .setDesc(
-        "Devices that use the same name sync the same vault. Keep it identical " +
-          "on every device. Changing it starts a fresh merge with that name.",
+        "Devices that use the same name sync the same vault. Pick one that's " +
+          "already on Google Drive, or type a new name. Changing it starts a " +
+          "fresh merge with that name.",
       )
       .addText((t) =>
         t.setValue(pendingNs).onChange((v) => {
@@ -88,6 +89,12 @@ export class NSyncSettingTab extends PluginSettingTab {
           await this.plugin.changeNamespace(pendingNs);
           this.display();
         }),
+      )
+      .addButton((b) =>
+        b
+          .setButtonText("Choose from Google Drive")
+          .setDisabled(!this.plugin.isAuthed())
+          .onClick(() => this.plugin.chooseRemoteVault()),
       );
 
     new Setting(containerEl)

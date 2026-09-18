@@ -13,6 +13,7 @@ import { isValidNamespace } from "./sync/namespace";
 import { summarizeRemote } from "./sync/remoteSummary";
 import { RemoteFilesModal } from "./ui/remoteFilesModal";
 import { SignInLinkModal } from "./ui/signInLinkModal";
+import { VaultPickerModal } from "./ui/vaultPickerModal";
 import { FirstSyncModal } from "./ui/firstSyncModal";
 import type { FirstSyncInfo } from "./sync/firstSync";
 
@@ -231,6 +232,28 @@ export default class NSyncPlugin extends Plugin {
       this.app,
       async () => summarizeRemote(await this.drive.list()),
       this.store.namespace,
+    ).open();
+  }
+
+  /**
+   * Pick which Drive vault this vault syncs with, from the vaults actually on
+   * Drive (instead of typing the name). Switching starts the first-sync review
+   * right away; nothing is written until the user confirms it.
+   */
+  chooseRemoteVault(): void {
+    if (!this.isAuthed()) {
+      notify("sign in first.");
+      return;
+    }
+    new VaultPickerModal(
+      this.app,
+      async () => summarizeRemote(await this.drive.list()).vaults,
+      this.store.namespace,
+      async (ns) => {
+        await this.changeNamespace(ns);
+        this.refreshSettingTab();
+        await this.runSync(true);
+      },
     ).open();
   }
 
