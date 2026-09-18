@@ -103,6 +103,13 @@ that the file exists on desktop only.
   tokens no longer expire; users pass a one-time "unverified app" warning; capped
   at 100 users (ample for personal use).
 
+### Distribution
+Personal use only. The plugin is **not** listed in the Obsidian community
+directory and is installed manually from a local build. The built `main.js`
+embeds the OAuth client secret, so it must never be attached to a public
+GitHub release or shared. Offering the plugin to others would mean switching to
+per-user OAuth credentials entered in settings.
+
 ## Open questions
 
 _(none — design tree fully explored)_
