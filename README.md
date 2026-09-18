@@ -118,7 +118,7 @@ Google ไม่รับ custom scheme (`obsidian://`) เป็น redirect �
 https กลาง 1 หน้าเพื่อ forward code กลับเข้า Obsidian
 
 1. สร้าง repo `nsync` บน GitHub
-2. เอา [bridge/callback.html](bridge/callback.html) ไปไว้ที่ root
+2. [callback.html](callback.html) อยู่ที่ root ของ repo อยู่แล้ว
 3. **Settings → Pages** → serve จาก branch `main` (root)
 4. เช็กว่าเปิด `https://<คุณ>.github.io/nsync/callback.html` ได้จริง
 5. URL นี้ต้องตรงกับ Redirect URI ข้อ 1.4 เป๊ะๆ
