@@ -1,4 +1,5 @@
-import { Notice, Platform, Plugin, setTooltip } from "obsidian";
+import { Notice, Platform, Plugin } from "obsidian";
+import { STATUS_CSS, StatusIndicator } from "./ui/statusIndicator";
 import { progressText, summaryText, type SyncProgress } from "./sync/progress";
 import { DEFAULT_SETTINGS, NSyncSettingTab, type NSyncSettings } from "./settings";
 import { IndexStore } from "./sync/indexStore";
@@ -37,7 +38,7 @@ export default class NSyncPlugin extends Plugin {
   private drive!: DriveClient;
   private authManager!: AuthManager;
   private settingTab!: NSyncSettingTab;
-  private statusBar!: HTMLElement;
+  private status!: StatusIndicator;
   private auth: PersistedAuth = {};
   private timer: number | null = null;
   /** Last auto-sync error shown, so a failing 60s timer notifies once, not every minute. */
@@ -68,10 +69,12 @@ export default class NSyncPlugin extends Plugin {
     });
 
     // Desktop only in practice: Obsidian mobile has no status bar.
-    this.statusBar = this.addStatusBarItem();
-    this.statusBar.addClass("mod-clickable");
-    this.statusBar.onClickEvent(() => this.runSync(true));
-    this.setStatus(this.isAuthed() ? "NSync" : "NSync: signed out", "Click to sync now");
+    const style = document.head.createEl("style", { text: STATUS_CSS });
+    this.register(() => style.remove());
+    const statusEl = this.addStatusBarItem();
+    statusEl.onClickEvent(() => this.runSync(true));
+    this.status = new StatusIndicator(statusEl);
+    this.showIdleStatus();
     this.addCommand({
       id: "nsync-show-remote",
       name: "Show files on Drive",
@@ -132,7 +135,7 @@ export default class NSyncPlugin extends Plugin {
     const notice = manual ? new Notice("NSync: starting…", 0) : null;
     let lastPaint = 0;
     const onProgress = (p: SyncProgress) => {
-      this.setStatus(`NSync ↻ ${progressText(p)}`);
+      this.status.set("syncing", progressText(p), `NSync: ${progressText(p)}`);
       // Scanning can report thousands of files; repaint the notice at most ~10x/s.
       const now = Date.now();
       if (notice && (p.phase !== "scanning" || now - lastPaint > 100)) {
@@ -149,7 +152,7 @@ export default class NSyncPlugin extends Plugin {
       }
       const summary = summaryText(result);
       const time = new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
-      this.setStatus(`NSync ✓ ${time}`, `Last sync ${time}: ${summary}. Click to sync now.`);
+      this.status.set("ok", time, `NSync: last sync ${time}, ${summary}. Click to sync now.`);
       this.lastAutoError = null;
       if (notice) {
         notice.setMessage(`NSync: ${summary}`);
@@ -159,15 +162,19 @@ export default class NSyncPlugin extends Plugin {
       const msg = (e as Error).message;
       console.error("NSync failed", e);
       notice?.hide();
-      this.setStatus("NSync ⚠ failed", `${msg} Click to retry.`);
+      this.status.set("error", "sync failed", `NSync: ${msg} Click to retry.`);
       if (manual || msg !== this.lastAutoError) new Notice(`NSync failed: ${msg}`);
       if (!manual) this.lastAutoError = msg;
     }
   }
 
-  private setStatus(text: string, tooltip?: string): void {
-    this.statusBar.setText(text);
-    if (tooltip) setTooltip(this.statusBar, tooltip, { placement: "top" });
+  /** Resting state before the first sync of the session, or after sign-in/out. */
+  private showIdleStatus(): void {
+    if (this.isAuthed()) {
+      this.status.set("idle", "NSync", "NSync: click to sync now");
+    } else {
+      this.status.set("signed-out", "signed out", "NSync: not signed in. Open settings to sign in.");
+    }
   }
 
   /** Read-only browser for the hidden appDataFolder (the Drive UI can't show it). */
@@ -215,7 +222,7 @@ export default class NSyncPlugin extends Plugin {
       this.auth = {};
       await this.persistAuth();
       new Notice("NSync: signed out.");
-      this.setStatus("NSync: signed out");
+      this.showIdleStatus();
       this.refreshSettingTab();
       return;
     }
@@ -235,7 +242,7 @@ export default class NSyncPlugin extends Plugin {
     await this.persistAuth();
     await this.refreshAccountEmail();
     new Notice(this.auth.email ? `NSync: signed in as ${this.auth.email}` : "NSync: signed in.");
-    this.setStatus("NSync", "Click to sync now");
+    this.showIdleStatus();
     this.refreshSettingTab();
   }
 
