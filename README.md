@@ -212,8 +212,6 @@ src/
 └── ui/                  status bar, modals
 ```
 
-Design notes: [CONTEXT.md](CONTEXT.md) and [docs/adr/](docs/adr/).
-
 ## License
 
 [MIT](LICENSE)

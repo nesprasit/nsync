@@ -8,3 +8,7 @@ data.json
 
 # Never commit real OAuth credentials (use credentials.example.ts as template)
 src/auth/credentials.ts
+
+# Design notes kept local only
+docs/
+CONTEXT.md
