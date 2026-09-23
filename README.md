@@ -13,18 +13,18 @@ your own Google Cloud OAuth client.
 
 ## Features
 
-- 🔁 **Two-way sync** between any number of devices
-- 🗂️ **Many vaults, one Google account.** Each vault is kept separate on Drive
-- 🔐 **Your own OAuth client.** Nothing goes through the plugin author
-- 🧩 **Conflict copies.** Editing the same note on two devices keeps both versions
-- 🪦 **Deletes stay deleted**, even on a device that joins later
-- ✅ **Review before the first sync.** See every upload, download and delete
+- **Two-way sync** between any number of devices
+- **Many vaults, one Google account.** Each vault is kept separate on Drive
+- **Your own OAuth client.** Nothing goes through the plugin author
+- **Conflict copies.** Editing the same note on two devices keeps both versions
+- **Deletes stay deleted**, even on a device that joins later
+- **Review before the first sync.** See every upload, download and delete
   before anything is written, with a warning if the vault name doesn't match
   your other devices
-- 🛑 **Safety stop.** A sync that would delete most of a vault is refused
-- ⏱️ **Auto-sync every 60 s** plus a manual sync button, with live progress
-- 👀 **Show files on Google Drive.** Browse what's stored, since Drive's own UI can't
-- 📵 **Mobile-aware.** Skips files over 50 MB on phones
+- **Safety stop.** A sync that would delete most of a vault is refused
+- **Auto-sync every 60 s** plus a manual sync button, with live progress
+- **Show files on Google Drive.** Browse what's stored, since Drive's own UI can't
+- **Mobile-aware.** Skips files over 50 MB on phones
 
 ---
 
